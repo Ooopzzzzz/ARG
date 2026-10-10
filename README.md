@@ -1,56 +1,76 @@
-# DevDay Exchange Community Hackathon: Kochi
+# ARG — Enterprise AI Runtime Governance
 
-A repository template for participants at the 10–11 October 2026 hackathon. It contains event rules and documentation scaffolding; build your project from scratch at the event.
+ARG evaluates AI agent action proposals before a controlled executor can reach a target system. The hackathon MVP demonstrates deterministic policy checks, explainable risk, human approval, and an audit trail using synthetic customer data and a mock adapter.
 
-**[Event and registration on Luma](https://luma.com/z10nz8gp)** · **[Event rules](RULES.md)** · **[Agent instructions](AGENTS.md)**
+**This is a local prototype, not a production deployment or a guarantee of safety.** ARG only governs actions routed through its enforcement boundary. The demo does not connect to live enterprise systems or perform real business actions.
 
-## Event details
+## Current MVP features
 
-| Detail | Information |
-| --- | --- |
-| Venue | JAIN University, Kochi |
-| Location | [Open the venue map](https://maps.app.goo.gl/Eme7gR7NDXSNRANu5) |
-| Rooms | 2008 and 2009 |
-| Check-in | 10 October 2026, 6:00 PM IST |
-| Kick-off | 10 October 2026, 6:30 PM IST |
-| Wrap-up | 11 October 2026, by 10:00 AM IST |
-| Participation | Solo or a team of up to 4 participants |
-| Theme | Open — build anything you like |
+- Tenant-scoped demo organization and agent credentials stored as keyed digests.
+- Versioned deterministic policy rules with deny precedence and default deny.
+- Explainable risk factors and `ALLOW`, `DENY`, `REQUIRE_APPROVAL` outcomes.
+- Human approval bound to the original action hash and policy version.
+- Mock executor with one-time execution grants and idempotent request handling.
+- Operator console for overview, agents, policies, approvals, and audit events.
+- Local PostgreSQL and Docker Compose development environment.
 
-Keep your approved Luma QR code ready for entry, and bring your laptop and charger. Eligible checked-in participants will receive Codex credits and OpenAI API credits.
+## Requirements
 
-## Use this template
+- Docker Engine and Docker Compose V2 plugin.
+- Python 3.12+ (only needed to generate local configuration or run API tools outside Docker).
+- Node.js 22+ and npm (only needed to run the web app outside Docker).
 
-1. Select **Use this template → Create a new repository** on GitHub. Create your own project repository and clone it.
-2. Read [RULES.md](RULES.md) and [AGENTS.md](AGENTS.md) before building. Begin project implementation at the event.
-3. Fill in the project overview below as you build. Use any suitable language or framework, keeping the implementation simple.
-4. Record meaningful changes in [CHANGELOG.md](CHANGELOG.md) and your Codex usage in [AI_USAGE.md](AI_USAGE.md). Commit after completed milestones; aim for a meaningful checkpoint about every 30 minutes.
-5. Complete [SUBMISSION.md](SUBMISSION.md) with your code repository, short project description, and working demo. Follow submission instructions announced by the organizers.
+## Start locally
 
-This template has no application code or required technology stack. The documentation and commit cadence are repository workflow guidance; the event participation rules are in [RULES.md](RULES.md).
+From the repository root:
 
-## Project overview — complete during the event
+```bash
+python3 scripts/setup_local.py
+docker compose -f infra/docker-compose.yml up --build
+```
 
-- **Project name:** TODO
-- **Short description:** TODO — what it does, who it helps, and why it matters.
-- **Team:** TODO — participant names and GitHub handles; maximum 4 members.
-- **Working demo:** TODO — link or local demo instructions.
-- **Technology stack:** TODO
+The setup script creates `.env` with random local secrets. It refuses to overwrite an existing `.env`. Keep that file private and out of Git. The API applies database migrations and seeds the synthetic demo tenant, agent, and policy on startup.
 
-### Run the project
+Open the operator console at `http://localhost:3000` and sign in with the `OPERATOR_TOKEN` value from your local `.env` file. The API health endpoints are `http://localhost:8000/health/live` and `http://localhost:8000/health/ready`; interactive API docs are at `http://localhost:8000/docs`.
 
-Replace these placeholders with commands that actually work for your project:
+To stop the services, press Ctrl+C. To stop and remove the local database volume, run `docker compose -f infra/docker-compose.yml down -v` (this deletes local demo data).
 
-1. Prerequisites and versions: TODO
-2. Dependency installation: TODO
-3. Environment setup: TODO — list required variable names and provide a sanitized `.env.example` if needed.
-4. Start the project: TODO
-5. Run checks or tests: TODO
+## Demo walkthrough
 
-### Current status
+1. In **Overview**, submit **Routine customer update**. ARG should return `ALLOW`; use **Execute through mock adapter** to record the simulated result.
+2. Submit **High-impact update**. ARG should return `REQUIRE_APPROVAL`; the page explicitly shows that no target action has executed.
+3. Open **Approvals**, review the action summary, risk, and policy version, then select **Approve and resume**. The mock adapter records the action once.
+4. Return to **Audit trail** to trace the decision, approval, and mock execution.
+5. Submit **Restricted deletion**. The explicit deny rule blocks it.
 
-- Working features: TODO
-- Known limitations: TODO
-- Libraries, APIs, and public datasets used: TODO — include source links and applicable attribution.
+All scenarios use fictional customers. No external connector or target network request is configured.
 
-See [AI_USAGE.md](AI_USAGE.md) for AI assistance and [CHANGELOG.md](CHANGELOG.md) for the development record.
+## API and checks
+
+The API contract is documented in `Docs/docs/03-api/API_CONTRACT.md`. Core product and security requirements are in `Docs/docs/01-product/PRD.md`, `Docs/docs/02-architecture/TDD.md`, and `Docs/docs/05-security/THREAT_MODEL.md`.
+
+```bash
+uv sync --project apps/api --extra dev
+uv run --project apps/api pytest apps/api/tests -q
+uv run --project apps/api ruff check apps/api
+npm --prefix apps/web run typecheck
+npm --prefix apps/web run build
+```
+
+The test suite uses an isolated SQLite database for fast API checks. The local demo uses PostgreSQL. A PostgreSQL integration run and visual browser check should also be performed when Docker Compose and browser tooling are available.
+
+## Libraries
+
+- FastAPI, Pydantic, SQLAlchemy, Alembic, psycopg, and Uvicorn.
+- Next.js, React, and Fluent UI React Components.
+- PostgreSQL 16 for local persistence.
+
+## Limitations
+
+- Local demo authentication uses a single operator token and one synthetic tenant; it is not an enterprise identity or RBAC implementation.
+- Audit events are append-only through this API, but there is no hash chain or external tamper-evidence anchor.
+- The executor is mock-only. External target failures, distributed transaction behavior, and connector idempotency are not demonstrated.
+- Deployment hardening, rate limiting, SSO, production observability, backup/restore, and compliance certification are not included.
+- On 10 October 2026, `npm audit` reported five high-severity findings in the development-only Next.js ESLint dependency chain (`braces` via `fast-glob`). The registry had no newer `braces` release at that check; PostCSS advisories were resolved with a compatible override.
+
+See `CHANGELOG.md` for actual changes and checks, `AI_USAGE.md` for Codex assistance, and `SUBMISSION.md` for the event submission record.

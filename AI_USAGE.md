@@ -4,7 +4,7 @@ Use Codex during the hackathon and briefly document its actual contribution here
 
 ## Event build log
 
-No participant AI usage has been recorded yet. Replace the placeholder row as you build. Mark human review as pending until someone has reviewed the contribution.
+| 2026-10-10T23:01:23+05:30 | Codex | Implement documented ARG MVP P0 and demo flow | Added API, persistence/migration, mock executor, authenticated Next.js operator console, local container configuration, acceptance tests, and setup/demo docs | Pending human review | Python compile and domain assertions, web typecheck/lint/build, lock check, `impeccable detect`, and diff check passed. API TestClient verification and Compose startup could not run in this environment. |
 
 | Date and time with timezone | Tool / model, if known | Task | Assistance and affected files | Human review / corrections | Validation and result |
 | --- | --- | --- | --- | --- | --- |

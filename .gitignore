@@ -1,4 +1,4 @@
-# Local secrets; sanitized example files may be committed.
+# Local secrets; sanitized examples may be committed.
 .env
 .env.*
 !.env.example
@@ -6,7 +6,7 @@
 *.pem
 *.key
 
-# Common dependencies, build output, caches, and local tooling.
+# Dependencies, generated output, and local tooling.
 node_modules/
 .next/
 dist/
@@ -17,8 +17,12 @@ venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .DS_Store
 Thumbs.db
 *.log
-
-# Add entries appropriate to your chosen language or framework.
+*.tsbuildinfo
+coverage.xml
+htmlcov/
+.agent-state/

@@ -4,7 +4,12 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
-No project implementation has been recorded yet. Replace this sentence with entries as you build:
+## 2026-10-10T23:01:23+05:30 — Build ARG MVP governance demo
+
+- Changed: Added the FastAPI governance API, PostgreSQL persistence models and migration, local demo seeding, authenticated Next.js operator console, mock-only scenarios, policy and agent controls, approval review/resume, Docker Compose configuration, and API acceptance tests. Bound container ports to localhost and made generated `.env` files owner-only.
+- Why: Implement the documented MVP P0 as a local prototype and demonstrate action evaluation, approval, controlled execution, and an audit trail.
+- Validation: `python3 -m compileall -q apps/api/app apps/api/tests scripts/setup_local.py`, direct domain assertions for default deny/deny precedence/canonical hashing, `uv lock --check --offline --project apps/api`, `npm run typecheck --prefix apps/web`, `npm run lint --prefix apps/web`, `npm run build --prefix apps/web`, `impeccable detect`, and `git diff --check` passed. Python API tests, Ruff, and mypy could not complete: the approved package download stalled, and the system Python TestClient also hung while entering a minimal FastAPI app. Docker Compose startup could not run because the Compose V2 plugin is absent. `npm audit` reports five high-severity findings in the development-only ESLint dependency chain; the registry has no newer `braces` release to resolve them.
+- Limitations: Local prototype only; one synthetic tenant and shared local operator token; mock adapter only; no live enterprise connectors or production hardening. See README for dependency audit findings.
 
 ```text
 ## <actual timestamp> — <short change title>
