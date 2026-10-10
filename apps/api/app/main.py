@@ -1,11 +1,13 @@
 import hashlib
 import hmac
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -41,6 +43,27 @@ MAX_REQUEST_BYTES = 16_384
 
 settings = get_settings()
 app = FastAPI(title="ARG Runtime Governance API", version="0.1.0")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Serialize errors safely, replacing non-JSON compliant floats (nan, inf) with string representations
+    safe_errors = []
+    for error in exc.errors():
+        err_copy = dict(error)
+        inp = err_copy.get("input")
+        if isinstance(inp, float) and (inp != inp or inp == float("inf") or inp == float("-inf")):
+            err_copy["input"] = str(inp)
+        safe_errors.append(err_copy)
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
+
+
+def as_utc(dt: datetime) -> datetime:
+    """Ensures datetime is timezone-aware in UTC for safe comparison."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -467,7 +490,7 @@ def execute_request(
         raise HTTPException(status_code=409, detail="Action is not authorized for execution")
     if decision.outcome == "REQUIRE_APPROVAL":
         approval = session.scalar(select(Approval).where(Approval.request_id == request.id))
-        if approval is None or approval.status != "APPROVED" or approval.expires_at <= utc_now():
+        if approval is None or approval.status != "APPROVED" or as_utc(approval.expires_at) <= utc_now():
             raise HTTPException(status_code=409, detail="Approval is pending, rejected, or expired")
     policy = session.scalar(
         select(PolicyVersion)
@@ -492,7 +515,7 @@ def execute_request(
         )
         .with_for_update()
     )
-    if grant is None or grant.expires_at <= utc_now() or grant.status != "ACTIVE":
+    if grant is None or as_utc(grant.expires_at) <= utc_now() or grant.status != "ACTIVE":
         raise HTTPException(
             status_code=409, detail="Execution grant is missing, expired, or consumed"
         )
@@ -504,12 +527,21 @@ def execute_request(
             ExecutionGrant.expires_at > utc_now(),
         )
         .values(status="CONSUMED", consumed_at=utc_now())
+        .execution_options(synchronize_session=False)
     )
     if cast(CursorResult[Any], consumed).rowcount != 1:
         session.rollback()
         raise HTTPException(status_code=409, detail="Execution grant was already consumed")
+    grant.status = "CONSUMED"
+    grant.consumed_at = utc_now()
     try:
-        result = execute_enterprise_action(request.action, agent.tenant_id, session)
+        result = execute_enterprise_action(
+            request.action,
+            agent.tenant_id,
+            session,
+            request_id=request.id,
+            action_hash=request.request_hash,
+        )
     except Exception as exc:
         result = execute_mock_action(request.action)
         result["note"] = f"Fallback to mock adapter due to error: {str(exc)}"
@@ -584,7 +616,7 @@ def transition_approval(
     )
     if approval is None:
         raise HTTPException(status_code=404, detail="Approval not found")
-    if approval.status != "PENDING" or approval.expires_at <= utc_now():
+    if approval.status != "PENDING" or as_utc(approval.expires_at) <= utc_now():
         raise HTTPException(status_code=409, detail="Approval is no longer pending")
     request = session.scalar(
         select(RuntimeRequest).where(
@@ -620,6 +652,7 @@ def transition_approval(
             Approval.expires_at > utc_now(),
         )
         .values(status=next_status, rationale=body.rationale)
+        .execution_options(synchronize_session=False)
     )
     if cast(CursorResult[Any], transitioned).rowcount != 1:
         session.rollback()
@@ -715,4 +748,9 @@ def get_erp_records(session: Session = Depends(get_session)) -> dict[str, Any]:
             for i in invoices
         ],
     }
+
+
+from app.agent_gateway import router as agent_gateway_router
+app.include_router(agent_gateway_router)
+
 

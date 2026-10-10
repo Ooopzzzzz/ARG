@@ -18,6 +18,17 @@ DEMO_RULES = [
         "reason_code": "DESTRUCTIVE_ACTION_BLOCKED",
     },
     {
+        "action_type": "erp.invoice.refund",
+        "effect": "REQUIRE_APPROVAL",
+        "min_risk": 40,
+        "reason_code": "HIGH_VALUE_REFUND_REVIEW",
+    },
+    {
+        "action_type": "erp.invoice.refund",
+        "effect": "ALLOW",
+        "reason_code": "ROUTINE_REFUND_ALLOWED",
+    },
+    {
         "action_type": "customer.record.update",
         "effect": "REQUIRE_APPROVAL",
         "min_risk": 40,
@@ -74,6 +85,8 @@ def seed() -> None:
                 rules=DEMO_RULES,
             )
             session.add(policy)
+        else:
+            policy.rules = DEMO_RULES
 
         from app.models import ERPCustomer, ERPInvoice
         cust1 = session.scalar(select(ERPCustomer).where(ERPCustomer.tenant_id == organization.id, ERPCustomer.customer_code == "CUST-1042"))

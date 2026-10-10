@@ -4,6 +4,13 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T02:40:00+05:30 — Realtime LLM to External ERP Pipeline and Non-Blocking Claim-Check Governance
+
+- Changed: Added standalone External Enterprise ERP app (`apps/erp/server.py`) running on port 8080 with independent SQLite ledger and cryptographic proof verification; created `apps/api/app/security_tokens.py` implementing HMAC-SHA256 single-use proof token minting and replay attack prevention; implemented `apps/api/app/agent_gateway.py` with OpenAPI tool definitions compatible with OpenAI Custom Actions / Ollama tool calling and non-blocking asynchronous claim-check pattern (preventing 30-second HTTP connection drops during human review); added `test_realtime_pipeline.py` testing the complete end-to-end pipeline (Real LLM -> Instant Pause & Ticket Minting -> Human Operator Approval -> Token Minting -> ERP Mutation); fixed offset-naive datetime comparisons in `execute_request` and `transition_approval`.
+- Why: Provide investors and evaluators with a working proof of live real-world agent governance between real LLMs (ChatGPT / Ollama) and external third-party ERP systems without timing out during human approval.
+- Validation: Unit tests (11 passed in `apps/api/tests/test_runtime.py`); end-to-end test (`python3 test_realtime_pipeline.py`) passed 100%: verified ERP rejection of direct calls (HTTP 403), instant LLM pause response with ticket ID in <2s, human approval sign-off, single-use grant verification, and ERP ledger update (Invoice INV-2088 marked REFUNDED).
+- Limitations: LLM tool calling in containerized environments bridges to local Ollama via TCP bridge or structured intent dispatch; production deployment requires persistent secret management.
+
 ## 2026-10-11T01:30:00+05:30 — Build Enterprise ERP Portal & Governed AI Agent Sandbox
 
 - Changed: Added live PostgreSQL-backed Enterprise ERP data layer (`ERPCustomer`, `ERPInvoice`), Alembic migration `0002_erp_tables`, seed records for "Northstar Global Logistics", real ERP execution adapter (`apps/api/app/adapters/erp.py`), new `/api/v1/erp/records` endpoint, dedicated "Enterprise ERP Portal" dashboard tab with live customer ledger and invoice status, and an interactive "Live AI Agent (Chat)" sandbox demonstrating real-time natural language action proposal, policy interception, and human approval flow.
