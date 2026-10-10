@@ -4,12 +4,12 @@ Complete this file during the hackathon and use it to prepare your submission th
 
 ## Project
 
-- **Project name:** TODO
-- **Short description:** TODO — describe the problem, what you built, and who benefits.
-- **Code repository URL:** TODO
-- **Final submitted implementation commit SHA:** TODO
-- **Working demo URL or local demo steps:** TODO
-- **Demo access requirements:** TODO — explain any prerequisites without including private credentials.
+- **Project name:** ARG — Agent Runtime Governance
+- **Short description:** AI agents can propose actions that change enterprise data, but organizations need a way to enforce policy, require human review, and preserve an audit trail. ARG is a local prototype that evaluates proposed actions, explains allow/deny/approval outcomes, and routes approved work through a mock executor for agent developers and operations teams.
+- **Code repository URL:** https://github.com/Ooopzzzzz/ARG
+- **Final submitted implementation commit SHA:** Record after the final implementation checkpoint is committed.
+- **Working demo URL or local demo steps:** Local demo: follow [README.md](README.md), generate a private `.env`, start Docker Compose, then open `http://localhost:3000`.
+- **Demo access requirements:** Docker Engine and Docker Compose; the local operator token printed only in the ignored `.env` file. The demo uses synthetic data and a mock executor; no external services or credentials are required.
 
 ## Participants
 
@@ -17,18 +17,18 @@ Participate solo or in a team of up to 4. Remove unused rows.
 
 | Participant name | GitHub handle | Contribution |
 | --- | --- | --- |
-| TODO | TODO | TODO |
+| Awaiting participant confirmation | Awaiting participant confirmation | Confirm contributor attribution before submission. |
 
 ## Run and demonstrate
 
-- **Prerequisites and versions:** TODO
-- **Install command:** TODO
-- **Required environment variable names:** TODO — use a sanitized example file if needed.
-- **Start command:** TODO
-- **Demo walkthrough:** TODO — brief steps showing the implemented features.
-- **Checks performed and results:** TODO
-- **Known limitations or incomplete features:** TODO
-- **Libraries, APIs, and public datasets used:** TODO — link sources and record attribution where required.
+- **Prerequisites and versions:** Docker Engine with Docker Compose; Node.js 22 and Python 3.12 are only needed when running tools outside Docker.
+- **Install command:** `python3 scripts/setup_local.py`
+- **Required environment variable names:** `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL`, `AGENT_KEY_PEPPER`, `OPERATOR_TOKEN`, `ARG_DEMO_AGENT_KEY`, `CORS_ORIGINS`, and `API_URL`; generated locally in ignored `.env`.
+- **Start command:** `docker-compose --env-file .env -f infra/docker-compose.yml up --build -d`
+- **Demo walkthrough:** Use **Overview** to submit a routine update and execute it through the mock adapter; submit a high-impact update, review and approve it in **Approvals**, then inspect the decision/approval/execution in **Audit trail**; submit a restricted deletion and confirm it is denied.
+- **Checks performed and results:** Compose configuration and image builds passed; PostgreSQL reported healthy; migrations and demo seeding completed; API liveness returned HTTP 200; production Next.js build, lint, and type checks passed. Authenticated desktop/mobile browser walkthrough passed: all five sections loaded, allow/approval/deny scenarios completed, audit events appeared, mobile had no horizontal overflow, and keyboard focus was visible. Python pytest hangs on synchronous FastAPI routes even with a minimal app in the available runtimes; Ruff reports 90 findings and mypy reports 7 errors. `npm audit` reports five high findings in the development-only ESLint dependency chain; `npm audit --omit=dev` reported zero.
+- **Known limitations or incomplete features:** Local one-tenant prototype; operator uses one shared local token; risk environment/classification/impact are untrusted agent-declared inputs; executor is mock-only; no live target integrations or external audit anchor; Python test/static checks need follow-up; five development-only npm audit findings remain.
+- **Libraries, APIs, and public datasets used:** [FastAPI](https://fastapi.tiangolo.com/), [SQLAlchemy](https://www.sqlalchemy.org/), [Alembic](https://alembic.sqlalchemy.org/), [Next.js](https://nextjs.org/docs), [React](https://react.dev/), and [Fluent UI React](https://react.fluentui.dev/). PostgreSQL 16 is used locally. No public datasets or external application APIs are used; demo records are synthetic.
 - **AI usage record:** [AI_USAGE.md](AI_USAGE.md)
 - **Development change log:** [CHANGELOG.md](CHANGELOG.md)
 

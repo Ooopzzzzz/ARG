@@ -20,13 +20,20 @@ from app.models import Agent, AuditEvent, Execution, Organization, PolicyVersion
 from app.security import digest_agent_key
 
 AGENT_KEY = "arg_test_agent_key_for_runtime_tests"
-DENY_RULES = [{"action_type": "customer.record.delete", "effect": "DENY", "reason_code": "NO_DELETE"}]
+DENY_RULES = [
+    {"action_type": "customer.record.delete", "effect": "DENY", "reason_code": "NO_DELETE"}
+]
 ALLOW_RULES = [
     {"action_type": "customer.record.update", "effect": "ALLOW", "reason_code": "UPDATE_ALLOWED"},
     {"action_type": "customer.record.delete", "effect": "DENY", "reason_code": "NO_DELETE"},
 ]
 APPROVAL_RULES = [
-    {"action_type": "customer.record.update", "effect": "REQUIRE_APPROVAL", "min_risk": 40, "reason_code": "REVIEW"},
+    {
+        "action_type": "customer.record.update",
+        "effect": "REQUIRE_APPROVAL",
+        "min_risk": 40,
+        "reason_code": "REVIEW",
+    },
     {"action_type": "customer.record.update", "effect": "ALLOW", "reason_code": "UPDATE_ALLOWED"},
 ]
 
@@ -43,7 +50,9 @@ def client() -> Generator[tuple[TestClient, sessionmaker[Session], str], None, N
         session.add(tenant)
         session.flush()
         agent = Agent(
-            tenant_id=tenant.id, name="Test agent", key_digest=digest_agent_key(AGENT_KEY),
+            tenant_id=tenant.id,
+            name="Test agent",
+            key_digest=digest_agent_key(AGENT_KEY),
             key_prefix=AGENT_KEY[:10],
         )
         session.add(agent)
@@ -66,26 +75,37 @@ def add_policy(sessions: sessionmaker[Session], rules: list[dict[str, object]]) 
     with sessions.begin() as session:
         tenant = session.scalar(select(Organization))
         assert tenant is not None
-        session.add(PolicyVersion(tenant_id=tenant.id, name="Test policy", version=1, active=True, rules=rules))
+        session.add(
+            PolicyVersion(
+                tenant_id=tenant.id, name="Test policy", version=1, active=True, rules=rules
+            )
+        )
 
 
 def action(action_type: str = "customer.record.update", amount: int = 0) -> dict[str, object]:
     return {
-        "type": action_type, "target": "demo-crm/customer/1", "parameters": {"status": "review"},
+        "type": action_type,
+        "target": "demo-crm/customer/1",
+        "parameters": {"status": "review"},
         "environment": "production" if amount else "development",
         "data_classification": "confidential" if amount else "internal",
         "impact": {"amount": amount, "currency": "INR"},
     }
 
 
-def decide(client: TestClient, agent_id: str, action_payload: dict[str, object], key: str = "request-1"):
+def decide(
+    client: TestClient, agent_id: str, action_payload: dict[str, object], key: str = "request-1"
+):
     return client.post(
-        "/api/v1/runtime/decisions", headers={"Authorization": f"Bearer {AGENT_KEY}", "Idempotency-Key": key},
+        "/api/v1/runtime/decisions",
+        headers={"Authorization": f"Bearer {AGENT_KEY}", "Idempotency-Key": key},
         json={"agent_id": agent_id, "action": action_payload},
     )
 
 
-def test_allow_can_execute_once_and_is_audited(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_allow_can_execute_once_and_is_audited(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     response = decide(api, agent_id, action())
@@ -102,7 +122,9 @@ def test_allow_can_execute_once_and_is_audited(client: tuple[TestClient, session
         assert session.scalar(select(func.count()).select_from(AuditEvent)) == 2
 
 
-def test_approval_pauses_then_approves_and_executes(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_approval_pauses_then_approves_and_executes(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, APPROVAL_RULES)
     response = decide(api, agent_id, action(amount=5000))
@@ -112,12 +134,15 @@ def test_approval_pauses_then_approves_and_executes(client: tuple[TestClient, se
     headers = {"Authorization": f"Bearer {AGENT_KEY}"}
     blocked = api.post(f"/api/v1/runtime/requests/{result['request_id']}/execute", headers=headers)
     assert blocked.status_code == 409
-    approvals = api.get("/api/v1/approvals", headers={"Authorization": "Bearer test-operator-token"})
+    approvals = api.get(
+        "/api/v1/approvals", headers={"Authorization": "Bearer test-operator-token"}
+    )
     assert approvals.status_code == 200 and len(approvals.json()) == 1
     approval_id = approvals.json()[0]["id"]
     approved = api.post(
         f"/api/v1/approvals/{approval_id}/approve",
-        headers={"Authorization": "Bearer test-operator-token"}, json={"rationale": "Reviewed"},
+        headers={"Authorization": "Bearer test-operator-token"},
+        json={"rationale": "Reviewed"},
     )
     assert approved.status_code == 200
     executed = api.post(f"/api/v1/runtime/requests/{result['request_id']}/execute", headers=headers)
@@ -125,7 +150,9 @@ def test_approval_pauses_then_approves_and_executes(client: tuple[TestClient, se
     assert executed.json()["status"] == "EXECUTED"
 
 
-def test_explicit_deny_rule_never_executes(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_explicit_deny_rule_never_executes(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     denied = decide(api, agent_id, action("customer.record.delete"), "delete-1")
@@ -137,7 +164,9 @@ def test_explicit_deny_rule_never_executes(client: tuple[TestClient, sessionmake
     assert blocked.status_code == 409
 
 
-def test_unmatched_action_uses_default_deny(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_unmatched_action_uses_default_deny(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     response = decide(api, agent_id, action("customer.record.export"), "unmatched-1")
@@ -146,7 +175,9 @@ def test_unmatched_action_uses_default_deny(client: tuple[TestClient, sessionmak
     assert response.json()["reason_codes"] == ["DEFAULT_DENY"]
 
 
-def test_idempotency_same_payload_returns_original_request(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_idempotency_same_payload_returns_original_request(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     first = decide(api, agent_id, action(), "same-request")
@@ -155,32 +186,56 @@ def test_idempotency_same_payload_returns_original_request(client: tuple[TestCli
     assert first.json()["request_id"] == replay.json()["request_id"]
 
 
-def test_non_finite_impact_is_rejected(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_non_finite_impact_is_rejected(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     for value in (float("nan"), float("inf")):
-        payload = {"agent_id": agent_id, "action": {**action(), "impact": {"amount": value, "currency": "INR"}}}
+        payload = {
+            "agent_id": agent_id,
+            "action": {**action(), "impact": {"amount": value, "currency": "INR"}},
+        }
         response = api.post(
             "/api/v1/runtime/decisions",
-            headers={"Authorization": f"Bearer {AGENT_KEY}", "Idempotency-Key": f"non-finite-{value}", "Content-Type": "application/json"},
+            headers={
+                "Authorization": f"Bearer {AGENT_KEY}",
+                "Idempotency-Key": f"non-finite-{value}",
+                "Content-Type": "application/json",
+            },
             content=json.dumps(payload, allow_nan=True),
         )
         assert response.status_code == 422
 
 
-def test_explicit_deny_dominates_matching_allow(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_explicit_deny_dominates_matching_allow(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
-    add_policy(sessions, [
-        {"action_type": "customer.record.update", "effect": "ALLOW", "reason_code": "BROAD_ALLOW"},
-        {"action_type": "customer.record.update", "effect": "DENY", "reason_code": "SPECIFIC_DENY"},
-    ])
+    add_policy(
+        sessions,
+        [
+            {
+                "action_type": "customer.record.update",
+                "effect": "ALLOW",
+                "reason_code": "BROAD_ALLOW",
+            },
+            {
+                "action_type": "customer.record.update",
+                "effect": "DENY",
+                "reason_code": "SPECIFIC_DENY",
+            },
+        ],
+    )
     response = decide(api, agent_id, action())
     assert response.status_code == 200
     assert response.json()["decision"] == "DENY"
     assert response.json()["reason_codes"] == ["SPECIFIC_DENY"]
 
 
-def test_idempotency_key_changed_body_returns_conflict(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_idempotency_key_changed_body_returns_conflict(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     assert decide(api, agent_id, action(), "stable-key").status_code == 200
@@ -194,7 +249,9 @@ def test_missing_policy_fails_closed(client: tuple[TestClient, sessionmaker[Sess
     assert response.status_code == 503
 
 
-def test_audit_failure_rolls_back_decision(client: tuple[TestClient, sessionmaker[Session], str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_audit_failure_rolls_back_decision(
+    client: tuple[TestClient, sessionmaker[Session], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
 
@@ -209,7 +266,9 @@ def test_audit_failure_rolls_back_decision(client: tuple[TestClient, sessionmake
         assert session.scalar(select(func.count()).select_from(Execution)) == 0
 
 
-def test_non_finite_or_negative_impact_is_rejected(client: tuple[TestClient, sessionmaker[Session], str]) -> None:
+def test_non_finite_or_negative_impact_is_rejected(
+    client: tuple[TestClient, sessionmaker[Session], str],
+) -> None:
     api, sessions, agent_id = client
     add_policy(sessions, ALLOW_RULES)
     invalid = action(amount=-1)

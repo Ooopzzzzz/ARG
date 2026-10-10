@@ -21,7 +21,19 @@ export function hasOperatorSession(request: NextRequest): boolean {
 }
 
 export function sameOrigin(request: NextRequest): boolean {
-  return request.headers.get("origin") === request.nextUrl.origin;
+  const receivedOrigin = request.headers.get("origin");
+  const requestHost = request.headers.get("host");
+  if (!receivedOrigin || !requestHost) return false;
+
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(receivedOrigin);
+  } catch {
+    return false;
+  }
+
+  return parsedOrigin.host.toLowerCase() === requestHost.toLowerCase()
+    && parsedOrigin.protocol === request.nextUrl.protocol;
 }
 
 export function sessionCookieValue(): string | null {

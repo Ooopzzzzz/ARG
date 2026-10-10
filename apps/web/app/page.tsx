@@ -231,7 +231,7 @@ export default function Home() {
     finally { setBusy(false); }
   }
 
-  if (!sessionLoaded) return <div className="session-loading"><Spinner label="Checking operator session" /></div>;
+  if (!sessionLoaded) return <FluentProvider theme={webLightTheme}><div className="session-loading"><Spinner label="Checking operator session" /></div></FluentProvider>;
   if (!authenticated) return (
     <FluentProvider theme={webLightTheme}>
       <main className="login-shell"><form className="login-panel" onSubmit={(event) => void signIn(event)}>

@@ -26,14 +26,14 @@ From the repository root:
 
 ```bash
 python3 scripts/setup_local.py
-docker compose -f infra/docker-compose.yml up --build
+docker-compose --env-file .env -f infra/docker-compose.yml up --build -d
 ```
 
 The setup script creates `.env` with random local secrets. It refuses to overwrite an existing `.env`. Keep that file private and out of Git. The API applies database migrations and seeds the synthetic demo tenant, agent, and policy on startup.
 
 Open the operator console at `http://localhost:3000` and sign in with the `OPERATOR_TOKEN` value from your local `.env` file. The API health endpoints are `http://localhost:8000/health/live` and `http://localhost:8000/health/ready`; interactive API docs are at `http://localhost:8000/docs`.
 
-To stop the services, press Ctrl+C. To stop and remove the local database volume, run `docker compose -f infra/docker-compose.yml down -v` (this deletes local demo data).
+To stop the services, run `docker-compose --env-file .env -f infra/docker-compose.yml down`. To stop and remove the local database volume, add `-v` (this deletes local demo data).
 
 ## Demo walkthrough
 
@@ -68,9 +68,10 @@ The test suite uses an isolated SQLite database for fast API checks. The local d
 ## Limitations
 
 - Local demo authentication uses a single operator token and one synthetic tenant; it is not an enterprise identity or RBAC implementation.
+- Environment, data classification, and impact used in risk scoring are declared by the agent request. They are illustrative inputs, not independently verified facts; a compromised agent can understate them. Production enforcement would need trusted, server-side context and target-specific rules.
 - Audit events are append-only through this API, but there is no hash chain or external tamper-evidence anchor.
 - The executor is mock-only. External target failures, distributed transaction behavior, and connector idempotency are not demonstrated.
 - Deployment hardening, rate limiting, SSO, production observability, backup/restore, and compliance certification are not included.
-- On 10 October 2026, `npm audit` reported five high-severity findings in the development-only Next.js ESLint dependency chain (`braces` via `fast-glob`). The registry had no newer `braces` release at that check; PostCSS advisories were resolved with a compatible override.
+- On 10 October 2026, `npm audit` reported five high-severity findings in the development-only Next.js ESLint dependency chain (`braces` via `fast-glob`); `npm audit --omit=dev` reported no production dependency findings. The registry had no newer `braces` release at that check; PostCSS advisories were resolved with a compatible override.
 
 See `CHANGELOG.md` for actual changes and checks, `AI_USAGE.md` for Codex assistance, and `SUBMISSION.md` for the event submission record.

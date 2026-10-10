@@ -7,7 +7,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   if (!sameOrigin(request)) return NextResponse.json({ detail: "Origin rejected" }, { status: 403 });
-  const input: { token?: string } = await request.json();
+  let input: { token?: string };
+  try {
+    input = await request.json();
+  } catch {
+    return NextResponse.json({ detail: "Invalid JSON body" }, { status: 400 });
+  }
   if (!input.token || !verifyOperatorToken(input.token)) {
     return NextResponse.json({ detail: "Operator token is invalid" }, { status: 401 });
   }

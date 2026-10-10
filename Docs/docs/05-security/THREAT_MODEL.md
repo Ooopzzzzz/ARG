@@ -28,7 +28,7 @@ related: [[SECURITY_BASELINE]], [[SAD]], [[TEST_STRATEGY]]
 - Operator error or stale policy configuration.
 
 # 3. Trust assumptions
-ARG can only mediate actions routed through its enforcement boundary. The MVP's mock adapter does not prove safety for arbitrary third-party APIs. Database administrators and infrastructure administrators may have privileges beyond application controls; tamper evidence is not equivalent to absolute immutability.
+ARG can only mediate actions routed through its enforcement boundary. The MVP's mock adapter does not prove safety for arbitrary third-party APIs. Environment, data classification, and impact are agent-declared inputs in this MVP and are not trusted attributes. A production deployment must derive risk context from trusted server-side sources before using it to authorize actions. Database administrators and infrastructure administrators may have privileges beyond application controls; tamper evidence is not equivalent to absolute immutability.
 
 # 4. Threat register
 | ID | Threat | Severity | Mitigation | Verification |
@@ -49,6 +49,7 @@ ARG can only mediate actions routed through its enforcement boundary. The MVP's 
 | T-14 | Malicious dependency or supply-chain compromise | High | Lockfiles, dependency scanning, minimal images, review updates | CI security scan |
 | T-15 | Denial of service via large payloads or repeated decisions | Medium/High | Limits, rate limits, bounded queries, DB indexes | Load/abuse tests |
 | T-16 | Audit hash chain is misrepresented as immutable | Medium | Precise claims; verify chain; external anchor only in later hardening | Documentation review |
+| T-17 | Agent understates environment, classification, or impact to evade risk threshold | High | MVP labels these fields as untrusted demo inputs; production must derive them from trusted server-side context | Adversarial test with understated metadata; production fix remains required |
 
 # 5. Abuse cases
 - Agent submits `production` action with omitted classification.

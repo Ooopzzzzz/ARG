@@ -38,7 +38,12 @@ export async function POST(request: NextRequest) {
   if (!apiUrl || !agentKey) {
     return NextResponse.json({ detail: "Demo agent configuration is missing" }, { status: 503 });
   }
-  const input: { scenario?: keyof typeof scenarios; agent_id?: string } = await request.json();
+  let input: { scenario?: keyof typeof scenarios; agent_id?: string };
+  try {
+    input = await request.json();
+  } catch {
+    return NextResponse.json({ detail: "Invalid JSON body" }, { status: 400 });
+  }
   const action = input.scenario ? scenarios[input.scenario] : undefined;
   if (!action || !input.agent_id) {
     return NextResponse.json({ detail: "Choose a supported scenario and registered demo agent" }, { status: 422 });

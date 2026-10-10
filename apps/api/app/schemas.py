@@ -36,6 +36,7 @@ class Action(BaseModel):
             raise ValueError("Action parameters exceed the 8 KB demo limit")
         return value
 
+
 class DecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: UUID

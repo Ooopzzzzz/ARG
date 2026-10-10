@@ -10,7 +10,12 @@ export async function POST(request: NextRequest) {
   if (!apiUrl || !agentKey) {
     return NextResponse.json({ detail: "Demo agent configuration is missing" }, { status: 503 });
   }
-  const body: { request_id?: string } = await request.json();
+  let body: { request_id?: string };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ detail: "Invalid JSON body" }, { status: 400 });
+  }
   if (!body.request_id) {
     return NextResponse.json({ detail: "request_id is required" }, { status: 422 });
   }

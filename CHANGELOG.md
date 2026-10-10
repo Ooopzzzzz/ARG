@@ -4,6 +4,27 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T00:05:00+05:30 — Fix five pre-demo bugs
+
+- Changed: Fixed policy re-activation SQLAlchemy dirty-tracking bug (added `session.refresh` before re-setting `active=True`); corrected API Dockerfile build order (source copied before `pip install .`) and added `CMD`; added `ENV HOSTNAME="0.0.0.0"` to web Dockerfile for standalone Next.js binding; wrapped initial `Spinner` in `FluentProvider` for theme context; added `try/catch` around `request.json()` in all three web API routes (`session`, `demo/action`, `demo/execute`) to return 400 instead of 500 on malformed bodies.
+- Why: Policy activation bug could silently deactivate all policies during demo; Dockerfiles would fail or be unreachable; Spinner rendered unstyled without FluentProvider; uncaught JSON parse errors crashed routes with generic 500s.
+- Validation: `python3 -m compileall -q apps/api/app/` passed, `npm run typecheck`, `npm run lint`, and `npm run build` all passed clean. Diff reviewed for each fix.
+- Limitations: Docker image rebuild not re-run in this pass; Python TestClient still hangs in available runtimes.
+
+## 2026-10-10T23:24:03+05:30 — Verify local demo and document trust boundary
+
+- Changed: Added a web Docker ignore file to exclude local dependencies/build output, corrected flex alignment values that emitted Autoprefixer warnings, documented the agent-declared risk metadata limitation in README and threat model, and made Compose setup commands explicit about the root `.env` file.
+- Why: Keep Docker builds small and make the demo's security boundary and reproducible local setup clear.
+- Validation: Docker Compose V5.5.1 config validation passed; API and web images built; PostgreSQL reported healthy; API migration and seed completed; API liveness returned HTTP 200; production Next.js build, lint, and type validation passed during image build. Browser review passed sign-in layout at desktop/mobile dimensions, but authenticated scenarios remain under verification. Python pytest/Ruff/mypy were not verified because the system Python TestClient hangs on a minimal FastAPI app and the Python 3.12 dev dependency sync did not complete.
+- Limitations: Compose startup currently depends on registry downloads; agent-declared risk metadata is untrusted; the remaining npm audit findings are confined to the development lint dependency chain.
+
+## 2026-10-10T23:31:00+05:30 — Fix same-origin session check and verify demo flow
+
+- Changed: Updated the web session CSRF check to validate the parsed Origin against the public Host and request protocol; rebuilt the production web image. Updated submission results with the completed authenticated demo walkthrough.
+- Why: The previous check compared the browser origin to Next.js's internal container URL, rejecting valid local sign-in requests.
+- Validation: Security reviewer found host/scheme comparison appropriate for the loopback Compose setup; production build and lint/type checks passed. Browser verified sign-in, all five sections, ALLOW plus mock execution, REQUIRE_APPROVAL then approval/resume, DENY, and audit history. Mobile layout had no horizontal overflow, keyboard focus was visible, and no console/request errors occurred.
+- Limitations: Python automated tests still hang on a minimal synchronous FastAPI route in the available runtimes; Ruff and mypy findings are being addressed. Agent-declared risk context remains untrusted.
+
 ## 2026-10-10T23:01:23+05:30 — Build ARG MVP governance demo
 
 - Changed: Added the FastAPI governance API, PostgreSQL persistence models and migration, local demo seeding, authenticated Next.js operator console, mock-only scenarios, policy and agent controls, approval review/resume, Docker Compose configuration, and API acceptance tests. Bound container ports to localhost and made generated `.env` files owner-only.

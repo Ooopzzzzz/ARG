@@ -5,10 +5,8 @@ Use Codex during the hackathon and briefly document its actual contribution here
 ## Event build log
 
 | 2026-10-10T23:01:23+05:30 | Codex | Implement documented ARG MVP P0 and demo flow | Added API, persistence/migration, mock executor, authenticated Next.js operator console, local container configuration, acceptance tests, and setup/demo docs | Pending human review | Python compile and domain assertions, web typecheck/lint/build, lock check, `impeccable detect`, and diff check passed. API TestClient verification and Compose startup could not run in this environment. |
-
-| Date and time with timezone | Tool / model, if known | Task | Assistance and affected files | Human review / corrections | Validation and result |
-| --- | --- | --- | --- | --- | --- |
-| TODO | Codex | TODO | TODO | Pending | TODO |
+| 2026-10-10T23:24:03+05:30 | Codex | Complete remaining local verification and submission prep | Added `apps/web/.dockerignore`, adjusted CSS alignment compatibility, updated Compose setup instructions, and documented the untrusted agent risk metadata boundary in README/threat model; performed UI/security reviews | Pending human review; corrected the CSRF origin check after browser review exposed a rejection | Docker Compose config and image builds passed; Postgres healthy; API liveness HTTP 200; production web build/lint/type validation passed. Authenticated browser flow passed after the origin check fix. Python tests hang on a generic sync FastAPI route; Ruff and mypy findings were identified for cleanup. |
+| 2026-10-11T00:05:00+05:30 | Codex | Fix five pre-demo reliability and Docker issues | Refactored policy activation dirty-tracking in `main.py`, fixed API Dockerfile build sequence and CMD, configured Next.js standalone HOSTNAME binding in web Dockerfile, wrapped loading spinner in FluentProvider, and added error handling for JSON request parsing across web API routes | Pending human review | Python compileall passed, web typecheck, lint, and Next.js production build passed. |
 
 ## Template preparation
 
