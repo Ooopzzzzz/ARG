@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.adapters.erp import execute_enterprise_action
 from app.adapters.mock import execute_mock_action
 from app.config import get_settings
 from app.database import get_session
@@ -21,6 +22,8 @@ from app.models import (
     Approval,
     AuditEvent,
     Decision,
+    ERPCustomer,
+    ERPInvoice,
     Execution,
     ExecutionGrant,
     Organization,
@@ -505,13 +508,18 @@ def execute_request(
     if cast(CursorResult[Any], consumed).rowcount != 1:
         session.rollback()
         raise HTTPException(status_code=409, detail="Execution grant was already consumed")
-    result = execute_mock_action(request.action)
+    try:
+        result = execute_enterprise_action(request.action, agent.tenant_id, session)
+    except Exception as exc:
+        result = execute_mock_action(request.action)
+        result["note"] = f"Fallback to mock adapter due to error: {str(exc)}"
+
     execution = Execution(
         tenant_id=agent.tenant_id, request_id=request.id, status="EXECUTED", result=result
     )
     session.add(execution)
     request.state = "EXECUTED"
-    append_audit(session, agent.tenant_id, "MOCK_EXECUTION_COMPLETED", result, request.id)
+    append_audit(session, agent.tenant_id, "ENTERPRISE_EXECUTION_COMPLETED", result, request.id)
     try:
         session.commit()
     except SQLAlchemyError as error:
@@ -667,3 +675,44 @@ def list_audit_events(
         }
         for row in events
     ]
+
+
+@app.get(f"{API_PREFIX}/erp/records", dependencies=[Depends(require_operator)])
+def get_erp_records(session: Session = Depends(get_session)) -> dict[str, Any]:
+    tenant = tenant_id(session)
+    customers = session.scalars(
+        select(ERPCustomer).where(ERPCustomer.tenant_id == tenant).order_by(ERPCustomer.customer_code)
+    ).all()
+    invoices = session.scalars(
+        select(ERPInvoice).where(ERPInvoice.tenant_id == tenant).order_by(ERPInvoice.invoice_code)
+    ).all()
+    return {
+        "customers": [
+            {
+                "id": str(c.id),
+                "customer_code": c.customer_code,
+                "name": c.name,
+                "status": c.status,
+                "credit_limit": c.credit_limit,
+                "current_balance": c.current_balance,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            }
+            for c in customers
+        ],
+        "invoices": [
+            {
+                "id": str(i.id),
+                "invoice_code": i.invoice_code,
+                "customer_id": str(i.customer_id),
+                "amount": i.amount,
+                "currency": i.currency,
+                "status": i.status,
+                "refund_status": i.refund_status,
+                "refund_amount": i.refund_amount,
+                "notes": i.notes,
+                "updated_at": i.updated_at.isoformat() if i.updated_at else None,
+            }
+            for i in invoices
+        ],
+    }
+

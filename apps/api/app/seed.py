@@ -74,10 +74,69 @@ def seed() -> None:
                 rules=DEMO_RULES,
             )
             session.add(policy)
+
+        from app.models import ERPCustomer, ERPInvoice
+        cust1 = session.scalar(select(ERPCustomer).where(ERPCustomer.tenant_id == organization.id, ERPCustomer.customer_code == "CUST-1042"))
+        if cust1 is None:
+            cust1 = ERPCustomer(
+                tenant_id=organization.id,
+                customer_code="CUST-1042",
+                name="Acme Retail Solutions",
+                status="ACTIVE",
+                credit_limit=150000,
+                current_balance=24500,
+            )
+            session.add(cust1)
+            session.flush()
+
+        cust2 = session.scalar(select(ERPCustomer).where(ERPCustomer.tenant_id == organization.id, ERPCustomer.customer_code == "CUST-2088"))
+        if cust2 is None:
+            cust2 = ERPCustomer(
+                tenant_id=organization.id,
+                customer_code="CUST-2088",
+                name="Global Telecom Enterprise",
+                status="ACTIVE",
+                credit_limit=500000,
+                current_balance=185000,
+            )
+            session.add(cust2)
+            session.flush()
+
+        inv1 = session.scalar(select(ERPInvoice).where(ERPInvoice.tenant_id == organization.id, ERPInvoice.invoice_code == "INV-1042"))
+        if inv1 is None:
+            inv1 = ERPInvoice(
+                tenant_id=organization.id,
+                invoice_code="INV-1042",
+                customer_id=cust1.id,
+                amount=1500,
+                currency="INR",
+                status="PAID",
+                refund_status="NONE",
+                refund_amount=0,
+                notes="Standard logistics supply package",
+            )
+            session.add(inv1)
+
+        inv2 = session.scalar(select(ERPInvoice).where(ERPInvoice.tenant_id == organization.id, ERPInvoice.invoice_code == "INV-2088"))
+        if inv2 is None:
+            inv2 = ERPInvoice(
+                tenant_id=organization.id,
+                invoice_code="INV-2088",
+                customer_id=cust2.id,
+                amount=50000,
+                currency="INR",
+                status="PAID",
+                refund_status="NONE",
+                refund_amount=0,
+                notes="Enterprise freight & dedicated corridor contract",
+            )
+            session.add(inv2)
+
     logging.getLogger(__name__).info(
-        "Seeded tenant=%s agent=%s active_policy=%s", DEMO_ORGANIZATION, DEMO_AGENT, DEMO_POLICY
+        "Seeded tenant=%s agent=%s active_policy=%s with ERP data", DEMO_ORGANIZATION, DEMO_AGENT, DEMO_POLICY
     )
 
 
 if __name__ == "__main__":
     seed()
+

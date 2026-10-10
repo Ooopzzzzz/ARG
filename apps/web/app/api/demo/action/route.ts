@@ -38,15 +38,15 @@ export async function POST(request: NextRequest) {
   if (!apiUrl || !agentKey) {
     return NextResponse.json({ detail: "Demo agent configuration is missing" }, { status: 503 });
   }
-  let input: { scenario?: keyof typeof scenarios; agent_id?: string };
+  let input: { scenario?: keyof typeof scenarios; agent_id?: string; custom_action?: Record<string, unknown> };
   try {
     input = await request.json();
   } catch {
     return NextResponse.json({ detail: "Invalid JSON body" }, { status: 400 });
   }
-  const action = input.scenario ? scenarios[input.scenario] : undefined;
+  const action = input.custom_action ?? (input.scenario ? scenarios[input.scenario] : undefined);
   if (!action || !input.agent_id) {
-    return NextResponse.json({ detail: "Choose a supported scenario and registered demo agent" }, { status: 422 });
+    return NextResponse.json({ detail: "Provide a valid action and registered demo agent" }, { status: 422 });
   }
   const response = await fetch(`${apiUrl}/api/v1/runtime/decisions`, {
     method: "POST",

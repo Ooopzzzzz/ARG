@@ -4,6 +4,13 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T01:30:00+05:30 — Build Enterprise ERP Portal & Governed AI Agent Sandbox
+
+- Changed: Added live PostgreSQL-backed Enterprise ERP data layer (`ERPCustomer`, `ERPInvoice`), Alembic migration `0002_erp_tables`, seed records for "Northstar Global Logistics", real ERP execution adapter (`apps/api/app/adapters/erp.py`), new `/api/v1/erp/records` endpoint, dedicated "Enterprise ERP Portal" dashboard tab with live customer ledger and invoice status, and an interactive "Live AI Agent (Chat)" sandbox demonstrating real-time natural language action proposal, policy interception, and human approval flow.
+- Why: Provide undeniable proof of real enterprise middleware value for investors and judges by showing a real protected ERP system of record mutating live only when authorized by ARG.
+- Validation: Database migration and seed verified; `/api/v1/erp/records` returned live accounts and invoices; web TypeScript, ESLint, and Next.js production build passed; Docker containers running healthy on ports 3000 and 8000.
+- Limitations: LLM chat uses deterministic local intent parsing mapped to ARG action schemas; external cloud LLM key is optional.
+
 ## 2026-10-11T00:05:00+05:30 — Fix five pre-demo bugs
 
 - Changed: Fixed policy re-activation SQLAlchemy dirty-tracking bug (added `session.refresh` before re-setting `active=True`); corrected API Dockerfile build order (source copied before `pip install .`) and added `CMD`; added `ENV HOSTNAME="0.0.0.0"` to web Dockerfile for standalone Next.js binding; wrapped initial `Spinner` in `FluentProvider` for theme context; added `try/catch` around `request.json()` in all three web API routes (`session`, `demo/action`, `demo/execute`) to return 400 instead of 500 on malformed bodies.

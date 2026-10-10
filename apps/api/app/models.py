@@ -122,3 +122,35 @@ class AuditEvent(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ERPCustomer(Base):
+    __tablename__ = "erp_customers"
+    __table_args__ = (UniqueConstraint("tenant_id", "customer_code"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    customer_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE")
+    credit_limit: Mapped[int] = mapped_column(Integer, default=100000)
+    current_balance: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class ERPInvoice(Base):
+    __tablename__ = "erp_invoices"
+    __table_args__ = (UniqueConstraint("tenant_id", "invoice_code"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(ForeignKey("organizations.id"), index=True)
+    invoice_code: Mapped[str] = mapped_column(String(32), nullable=False)
+    customer_id: Mapped[UUID] = mapped_column(ForeignKey("erp_customers.id"), index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="INR")
+    status: Mapped[str] = mapped_column(String(32), default="PAID")
+    refund_status: Mapped[str] = mapped_column(String(32), default="NONE")
+    refund_amount: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str | None] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
