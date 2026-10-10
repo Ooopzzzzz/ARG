@@ -1,0 +1,152 @@
+openapi: 3.1.0
+info:
+  title: ARG Runtime Governance API
+  version: 1.0.0
+  description: Initial MVP contract. Keep synchronized with API_CONTRACT.md and implementation.
+servers:
+  - url: http://localhost:8000
+paths:
+  /health/live:
+    get:
+      operationId: liveness
+      responses:
+        "200":
+          description: Process is alive
+  /health/ready:
+    get:
+      operationId: readiness
+      responses:
+        "200":
+          description: Dependencies are ready
+        "503":
+          description: A required dependency is unavailable
+  /api/v1/runtime/decisions:
+    post:
+      operationId: createRuntimeDecision
+      security:
+        - AgentBearer: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DecisionRequest"
+      responses:
+        "200":
+          description: A governance decision was evaluated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DecisionResponse"
+        "401": { description: Unauthenticated }
+        "403": { description: Forbidden }
+        "409": { description: Idempotency conflict }
+        "422": { description: Invalid request }
+        "503": { description: Policy or dependency unavailable; no execution allowed }
+  /api/v1/runtime/requests/{request_id}/execute:
+    post:
+      operationId: executeGovernedRequest
+      security:
+        - AgentBearer: []
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Execution outcome }
+        "403": { description: Not permitted to execute this request }
+        "409": { description: Invalid, consumed, or expired grant }
+        "503": { description: Executor unavailable; no implicit permission }
+  /api/v1/approvals/{approval_id}/approve:
+    post:
+      operationId: approveRequest
+      security:
+        - OperatorBearer: []
+      parameters:
+        - in: path
+          name: approval_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rationale: { type: string, maxLength: 1000 }
+      responses:
+        "200": { description: Approval state updated }
+        "403": { description: Approver is not authorized }
+        "404": { description: Approval not found }
+        "409": { description: Invalid state transition }
+components:
+  securitySchemes:
+    AgentBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+    OperatorBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Operator session token
+  schemas:
+    DecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [agent_id, action]
+      properties:
+        agent_id: { type: string, format: uuid }
+        action:
+          type: object
+          additionalProperties: false
+          required: [type, target, parameters, environment, data_classification]
+          properties:
+            type: { type: string, minLength: 1, maxLength: 128 }
+            target: { type: string, minLength: 1, maxLength: 512 }
+            parameters: { type: object, maxProperties: 100 }
+            environment: { type: string, enum: [development, test, staging, production] }
+            data_classification: { type: string, enum: [public, internal, confidential, restricted] }
+            impact:
+              type: object
+              properties:
+                amount: { type: number, minimum: 0 }
+                currency: { type: string, minLength: 3, maxLength: 3 }
+        context:
+          type: object
+          additionalProperties: false
+          properties:
+            user_id: { type: string, maxLength: 256 }
+            purpose: { type: string, maxLength: 1000 }
+    DecisionResponse:
+      type: object
+      required: [request_id, decision, reason_codes, risk]
+      properties:
+        request_id: { type: string, format: uuid }
+        decision: { type: string, enum: [ALLOW, DENY, REQUIRE_APPROVAL] }
+        reason_codes:
+          type: array
+          items: { type: string }
+        policy_version_id: { type: string, format: uuid }
+        approval_id: { type: string, format: uuid }
+        expires_at: { type: string, format: date-time }
+        risk:
+          type: object
+          required: [score, factors]
+          properties:
+            score: { type: integer, minimum: 0, maximum: 100 }
+            factors:
+              type: array
+              items:
+                type: object
+                required: [name, points, reason]
+                properties:
+                  name: { type: string }
+                  points: { type: integer, minimum: 0 }
+                  reason: { type: string }
