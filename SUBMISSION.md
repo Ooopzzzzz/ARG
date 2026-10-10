@@ -7,7 +7,7 @@ Complete this file during the hackathon and use it to prepare your submission th
 - **Project name:** ARG — Agent Runtime Governance
 - **Short description:** AI agents can propose actions that change enterprise data, but organizations need a way to enforce policy, require human review, and preserve an audit trail. ARG is a local prototype that evaluates proposed actions, explains allow/deny/approval outcomes, and routes approved work through a mock executor for agent developers and operations teams.
 - **Code repository URL:** https://github.com/Ooopzzzzz/ARG
-- **Final submitted implementation commit SHA:** Record after the final implementation checkpoint is committed.
+- **Final submitted implementation commit SHA:** 9b1620d4d3b7cb3a0fa55e166486af8db264c197
 - **Working demo URL or local demo steps:** Local demo: follow [README.md](README.md), generate a private `.env`, start Docker Compose, then open `http://localhost:3000`.
 - **Demo access requirements:** Docker Engine and Docker Compose; the local operator token printed only in the ignored `.env` file. The demo uses synthetic data and a mock executor; no external services or credentials are required.
 
