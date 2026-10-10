@@ -3,6 +3,7 @@ import sqlite3
 import time
 from typing import Any
 from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 DB_PATH = os.environ.get("ERP_DB_PATH", "/tmp/northstar_erp.db")
@@ -129,6 +130,115 @@ class StatusPayload(BaseModel):
 
 
 # Endpoints
+@app.get("/", response_class=HTMLResponse)
+def erp_dashboard():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT customer_code, name, tier, status, email FROM erp_customers")
+    customers = [dict(row) for row in cursor.fetchall()]
+    cursor.execute("SELECT invoice_code, customer_code, amount, status, refund_status, refund_amount, notes FROM erp_invoices")
+    invoices = [dict(row) for row in cursor.fetchall()]
+    cursor.execute("SELECT grant_id, consumed_at FROM erp_consumed_grants ORDER BY consumed_at DESC")
+    consumed = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+
+    cust_rows = "".join(
+        f"<tr><td><code>{c['customer_code']}</code></td><td><b>{c['name']}</b></td><td>{c['tier']}</td><td><span class='badge {c['status'].lower()}'>{c['status']}</span></td><td>{c['email']}</td></tr>"
+        for c in customers
+    )
+    inv_rows_list = []
+    for i in invoices:
+        ref_text = f" (₹{i['refund_amount']:,})" if i['refund_status'] == 'REFUNDED' else ""
+        inv_rows_list.append(
+            f"<tr><td><code>{i['invoice_code']}</code></td><td>{i['customer_code']}</td><td><b>₹{i['amount']:,}</b></td>"
+            f"<td><span class='badge paid'>{i['status']}</span></td>"
+            f"<td><span class='badge {i['refund_status'].lower()}'>{i['refund_status']}{ref_text}</span></td>"
+            f"<td><small>{i['notes'] or 'Standard invoice'}</small></td></tr>"
+        )
+    inv_rows = "".join(inv_rows_list)
+    grant_rows = "".join(
+        f"<tr><td><code>{g['grant_id']}</code></td><td>{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(g['consumed_at']))}</td><td><span class='badge verified'>VERIFIED BY ARG</span></td></tr>"
+        for g in consumed
+    ) if consumed else "<tr><td colspan='3' style='text-align:center; color:#888;'>No cryptographic tokens consumed yet.</td></tr>"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Northstar Enterprise ERP (System of Record)</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #0f172a; color: #f8fafc; }}
+    .header {{ background: #1e293b; padding: 20px 32px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }}
+    .brand {{ font-size: 20px; font-weight: 700; letter-spacing: -0.5px; display: flex; align-items: center; gap: 12px; }}
+    .brand span {{ background: #3b82f6; color: white; padding: 4px 10px; border-radius: 6px; font-size: 14px; }}
+    .pill {{ background: #10b981; color: #022c22; font-weight: 600; padding: 4px 12px; border-radius: 12px; font-size: 12px; }}
+    .container {{ max-width: 1200px; margin: 32px auto; padding: 0 24px; }}
+    .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 24px; margin-bottom: 24px; }}
+    .card-title {{ font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; }}
+    table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }}
+    th {{ background: #0f172a; color: #94a3b8; padding: 12px; border-bottom: 1px solid #334155; }}
+    td {{ padding: 12px; border-bottom: 1px solid #334155; }}
+    code {{ background: #0f172a; padding: 3px 6px; border-radius: 4px; font-size: 12px; color: #38bdf8; }}
+    .badge {{ padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }}
+    .badge.active, .badge.paid {{ background: rgba(16, 185, 129, 0.2); color: #34d399; }}
+    .badge.refunded {{ background: rgba(239, 68, 68, 0.2); color: #f87171; }}
+    .badge.none {{ background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }}
+    .badge.verified {{ background: rgba(59, 130, 246, 0.2); color: #60a5fa; }}
+    .security-banner {{ background: #0284c7; padding: 12px 18px; border-radius: 8px; font-size: 13px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }}
+    .btn-refresh {{ background: #3b82f6; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; text-decoration: none; font-size: 13px; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <span>ERP</span> Northstar Global Logistics — Enterprise ERP
+    </div>
+    <div>
+      <span class="pill">STANDALONE PORT 8080</span>
+      <a href="/" class="btn-refresh" style="margin-left: 12px;">↻ Refresh Ledger</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="security-banner">
+      <div>🛡️ <b>ARG RUNTIME GOVERNANCE ENFORCED:</b> Direct external write access is strictly forbidden (HTTP 403). Mutations require HMAC-SHA256 verified single-use <code>X-ARG-Grant-Token</code>.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Financial Invoices & Ledger Status</div>
+      <table>
+        <thead>
+          <tr><th>Invoice Code</th><th>Customer</th><th>Invoice Amount</th><th>Billing Status</th><th>Refund Ledger State</th><th>Notes</th></tr>
+        </thead>
+        <tbody>{inv_rows}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Customer Accounts Registry</div>
+      <table>
+        <thead>
+          <tr><th>Customer Code</th><th>Company Name</th><th>Tier</th><th>Account Status</th><th>Billing Email</th></tr>
+        </thead>
+        <tbody>{cust_rows}</tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Cryptographic Execution Grants Verified & Consumed</div>
+      <table>
+        <thead>
+          <tr><th>ARG Grant Request ID</th><th>Execution Timestamp</th><th>Cryptographic Security Status</th></tr>
+        </thead>
+        <tbody>{grant_rows}</tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "system": "Northstar Enterprise ERP", "port": 8080}
