@@ -19,8 +19,8 @@ Participate solo or in a team of up to 4. Remove unused rows.
 
 | Participant name | GitHub handle | Contribution |
 | --- | --- | --- |
-| Joel Shibu | Ooopzzzzz | System architecture, runtime governance gateway, external ERP integration, LLM tool-calling orchestration |
-| Fathima Roshini Siyad | fathimaroshini | Product design, policy engine rules, evaluation testing, operator console UI/UX |
+| Joel Shibu | Joel-Shibu | System architecture, runtime governance gateway, external ERP integration, LLM tool-calling orchestration |
+| Fathima Roshini Siyad | FATHIMA-ROSHINI | Product design, policy engine rules, evaluation testing, operator console UI/UX |
 
 ## Run and demonstrate
 
