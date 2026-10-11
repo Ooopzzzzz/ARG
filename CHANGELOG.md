@@ -4,6 +4,21 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T08:04:00+05:30 — Finalize event submission, add customer deletion tool schema, and verify 3 governance conditions
+
+- Changed:
+  1. Governance & Tools: Added `delete_customer_record` tool schema and mapped it to `customer.record.delete` action in `apps/api/app/agent_gateway.py`. Corrected customer update Action data classification to `confidential`.
+  2. Verified 3 Governance Conditions:
+     - `ALLOW`: Routine customer update (`update_customer_status`) verified generating an autonomous grant (Risk: 25/100).
+     - `REQUIRE_APPROVAL`: High-impact refund (`request_erp_refund`) verified pausing with Claim-Check ticket ID without timeout (Risk: 60/100 or 80/100).
+     - `DENY`: Destructive deletion (`delete_customer_record`) verified instantly blocked (`DESTRUCTIVE_ACTION_BLOCKED`).
+  3. Documentation: Finalized `SUBMISSION.md` with team name `Dev-X`, participants Joel Shibu (`Ooopzzzzz`) and Fathima Roshini Siyad (`fathimaroshini`), completed submission checklist, and updated submitted commit SHA.
+- Why: Complete final event submission requirements before the 10:00 AM IST deadline and verify all three governance conditions (ALLOW, REQUIRE_APPROVAL, DENY).
+- Validation:
+  - Direct gateway tests for all 3 conditions returned HTTP 200 with corresponding verdicts (`ALLOW`, `REQUIRE_APPROVAL`, `DENY`).
+  - `git diff --check` passed cleanly.
+- Limitations: Standalone ERP is synthetic.
+
 ## 2026-10-11T07:42:00+05:30 — Knowledge base audit, live invoice query resolution, and UI/accessibility polish
 
 - Changed:

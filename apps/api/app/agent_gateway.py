@@ -79,6 +79,23 @@ ERP_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_customer_record",
+            "description": "Permanently delete an enterprise customer record from Enterprise ERP.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_code": {
+                        "type": "string",
+                        "description": "The customer code to delete (e.g. CUST-1042 or CUST-2088)",
+                    },
+                },
+                "required": ["customer_code"],
+            },
+        },
+    },
 ]
 
 
@@ -225,7 +242,18 @@ def process_agent_chat(
             "target": cust_code,
             "parameters": {"status": status_val},
             "environment": "production",
-            "data_classification": "pii",
+            "data_classification": "confidential",
+            "impact": {"amount": 0, "currency": "INR"},
+        }
+    elif func_name == "delete_customer_record":
+        raw_cust = str(args.get("customer_code") or "").strip()
+        cust_code = raw_cust if len(raw_cust) >= 3 else "CUST-2088"
+        action_data = {
+            "type": "customer.record.delete",
+            "target": cust_code,
+            "parameters": {"customer_code": cust_code},
+            "environment": "production",
+            "data_classification": "restricted",
             "impact": {"amount": 0, "currency": "INR"},
         }
     else:
