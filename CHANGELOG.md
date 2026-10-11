@@ -4,6 +4,13 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T10:15:00+05:30 — Add architecture screenshots and visual walkthrough documentation
+
+- Changed: Added `images/` directory containing 5 visual demonstration screenshots covering the approval queue, split-view CLI prompt interception, append-only audit trail, all three governance conditions (ALLOW / REQUIRE_APPROVAL / DENY), and dual-screen ARG Console + Northstar Freight ERP view. Created `images/README.md` with complete figure titles and architectural captions, and linked from root `README.md`.
+- Why: Provide evaluators and judges with clear visual verification of the working system.
+- Validation: Verified all image file paths, markdown rendering, and `git diff --check`.
+- Limitations: Screenshots reflect local demonstration environment with synthetic data.
+
 ## 2026-10-11T08:04:00+05:30 — Finalize event submission, add customer deletion tool schema, and verify 3 governance conditions
 
 - Changed:

@@ -54,6 +54,8 @@ To verify the live Ollama → ARG approval → ERP path, run `python3 test_realt
 
 All customer and invoice data are fictional. Ollama runs locally; no cloud model or production ERP is configured.
 
+Visual walkthrough screenshots with full captions are documented in [`images/README.md`](images/README.md).
+
 ## API and checks
 
 The API contract is documented in `Docs/docs/03-api/API_CONTRACT.md`. Core product and security requirements are in `Docs/docs/01-product/PRD.md`, `Docs/docs/02-architecture/TDD.md`, and `Docs/docs/05-security/THREAT_MODEL.md`.
