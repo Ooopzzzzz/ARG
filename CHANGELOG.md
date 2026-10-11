@@ -4,6 +4,13 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T07:11:00+05:30 — Sanitize empty LLM tool arguments and add gateway error handling in CLI chat
+
+- Changed: Added input sanitization and fallback defaults in `apps/api/app/agent_gateway.py` so that when Ollama proposes empty string values (`invoice_code=""` or missing `customer_code`), ARG defaults to valid target identifiers (`INV-2088` / `CUST-1042`) instead of failing Pydantic `min_length=3` validation with a 500. Updated `chat_with_ollama.py` system prompt to instruct the model to use `INV-2088` by default when the user does not specify an invoice code, and added HTTP status checks before parsing JSON responses.
+- Why: Natural language prompts like "refund 50000 inr" omit invoice numbers, causing the model to emit blank string parameters which crashed Pydantic action validation.
+- Validation: Verified `echo "refund 50000 inr" | python3 chat_with_ollama.py` runs end-to-end against live Ollama `qwen2.5:7b` without error; ARG successfully paused execution with Risk 80/100 (Ticket ID generated); `git diff --check` passed clean.
+- Limitations: Defaults to primary demonstration records (`INV-2088` / `CUST-1042`) when the user prompt does not specify a target record.
+
 ## 2026-10-11T06:40:00+05:30 — Redesign industrial Freight ERP and elevate live Ollama governance in ARG Overview
 
 - Changed: Overhauled standalone Northstar Freight Core ERP (`apps/erp/server.py`) into an authentic industrial logistics workstation with an operational manifest strip, master-detail accounts receivable and customer ledger, live split-panel Cryptographic Settlement Inspector (displaying HMAC-SHA256 verification and replay protection), and live background synchronization. Replaced the generic mock-scenario hero on the ARG Console Overview page (`apps/web/app/page.tsx`, `apps/web/app/globals.css`) with a live 3-node Runtime Architecture Topology banner (`Ollama qwen2.5:7b` ⟷ `ARG Policy Engine v1` ⟷ `Northstar Freight Core ERP`), interactive governance presets, real-time prompt runner, and live decision outcome card; demoted synthetic mock scenario buttons into a collapsed offline developer fallback drawer.

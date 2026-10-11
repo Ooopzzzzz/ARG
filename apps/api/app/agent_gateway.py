@@ -188,19 +188,25 @@ def process_agent_chat(
 
     # Map mutation tool to ARG DecisionRequest
     if func_name == "request_erp_refund":
-        amount = int(args.get("amount", 50000))
-        invoice_code = args.get("invoice_code", "INV-2088")
+        try:
+            amount = int(args.get("amount") or 50000)
+        except (ValueError, TypeError):
+            amount = 50000
+        raw_code = str(args.get("invoice_code") or "").strip()
+        invoice_code = raw_code if len(raw_code) >= 3 else "INV-2088"
+        reason_val = str(args.get("reason") or "").strip() or "Customer requested refund"
         action_data = {
             "type": "erp.invoice.refund",
             "target": invoice_code,
-            "parameters": {"amount": amount, "reason": args.get("reason", "Customer requested")},
+            "parameters": {"amount": amount, "reason": reason_val},
             "environment": "production",
             "data_classification": "restricted",
             "impact": {"amount": amount, "currency": "INR"},
         }
     elif func_name == "update_customer_status":
-        cust_code = args.get("customer_code", "CUST-1042")
-        status_val = args.get("status", "ACTIVE")
+        raw_cust = str(args.get("customer_code") or "").strip()
+        cust_code = raw_cust if len(raw_cust) >= 3 else "CUST-1042"
+        status_val = str(args.get("status") or "").strip().upper() or "ACTIVE"
         action_data = {
             "type": "customer.record.update",
             "target": cust_code,

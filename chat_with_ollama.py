@@ -61,7 +61,9 @@ def main():
                     "content": (
                         "You are an enterprise AI assistant connected to Northstar Enterprise ERP via ARG. "
                         "When the user asks to refund an invoice, check invoices, or update customer status, "
-                        "use the available tools. Always pick the appropriate tool and arguments."
+                        "use the available tools. If the user does not specify an invoice code, use 'INV-2088'. "
+                        "If they ask to update a customer without specifying an account code, use 'CUST-1042'. "
+                        "Always populate required tool parameters with valid identifiers."
                     ),
                 },
                 {"role": "user", "content": user_input},
@@ -100,6 +102,9 @@ def main():
                 json={"message": user_input, "tool_call": tool_call},
                 timeout=10.0,
             )
+            if gateway_res.status_code != 200:
+                print(f"\n[ARG GATEWAY ERROR {gateway_res.status_code}]: {gateway_res.text}")
+                continue
             data = gateway_res.json()
 
             status = data.get("status")
