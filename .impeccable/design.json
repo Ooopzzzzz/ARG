@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-11T05:33:29+05:30",
+  "title": "Design System: Northstar ERP Ledger",
+  "extensions": {
+    "colorMeta": {
+      "ground": { "role": "neutral", "displayName": "Mineral ground", "canonical": "#f0f3ef" },
+      "surface": { "role": "neutral", "displayName": "Ledger white", "canonical": "#ffffff" },
+      "harbor": { "role": "primary", "displayName": "Harbor green", "canonical": "#215944" },
+      "vermilion": { "role": "secondary", "displayName": "Signal vermilion", "canonical": "#963e2d" },
+      "amber": { "role": "tertiary", "displayName": "Review amber", "canonical": "#76500b" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Register Display", "purpose": "Primary title and section hierarchy." },
+      "label": { "displayName": "Ledger Mono", "purpose": "Identifiers, values, and system metadata." }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "scroll-standard", "value": "smooth; reduced-motion: auto", "purpose": "Anchor navigation, disabled when reduced motion is requested." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "480px" },
+      { "name": "compact", "value": "760px" }
+    ],
+    "narrative": {
+      "northStar": "The Freight Handoff Register",
+      "rules": ["Visible state labels accompany status colors.", "Synthetic data is labeled as such."],
+      "dos": ["Use mono for identifiers and measured values.", "Keep every table column reachable on mobile."],
+      "donts": ["Do not imply synthetic records are production data.", "Do not add decorative shadows or textures."]
+    }
+  },
+  "components": []
+}

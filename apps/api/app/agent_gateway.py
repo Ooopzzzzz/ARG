@@ -16,6 +16,8 @@ router = APIRouter(prefix="/api/v1/agent-gateway", tags=["Agent Gateway"])
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "120"))
+OLLAMA_CONNECT_TIMEOUT_SECONDS = float(os.environ.get("OLLAMA_CONNECT_TIMEOUT_SECONDS", "5"))
 
 
 # Tools catalog exposed to LLM
@@ -107,6 +109,7 @@ def process_agent_chat(
     Zero timeout crash!
     """
     tool_calls = []
+    llm_model: str | None = None
 
     if req.tool_call:
         tool_calls = [req.tool_call]
@@ -123,8 +126,10 @@ def process_agent_chat(
             },
             {"role": "user", "content": req.message},
         ]
+        llm_model = OLLAMA_MODEL
         try:
-            with httpx.Client(base_url=OLLAMA_HOST, timeout=30.0) as client:
+            timeout = httpx.Timeout(OLLAMA_TIMEOUT_SECONDS, connect=OLLAMA_CONNECT_TIMEOUT_SECONDS)
+            with httpx.Client(base_url=OLLAMA_HOST, timeout=timeout) as client:
                 resp = client.post(
                     "/api/chat",
                     json={
@@ -134,6 +139,7 @@ def process_agent_chat(
                         "stream": False,
                     },
                 )
+                resp.raise_for_status()
                 llm_data = resp.json()
                 message_obj = llm_data.get("message", {})
                 tool_calls = message_obj.get("tool_calls", [])
@@ -143,28 +149,16 @@ def process_agent_chat(
                         "content": message_obj.get("content", ""),
                         "model": OLLAMA_MODEL,
                     }
-        except Exception:
-            # Fallback for network environments where docker container cannot bridge to host:
-            # Parse natural language intent into tool call
-            msg_lower = req.message.lower()
-            if "refund" in msg_lower:
-                amount = 50000 if "50" in msg_lower else 2500
-                code = "INV-2088" if "2088" in msg_lower or "acme" in msg_lower else "INV-1042"
-                tool_calls = [{
-                    "function": {
-                        "name": "request_erp_refund",
-                        "arguments": {"invoice_code": code, "amount": amount, "reason": "Customer request parsed by gateway agent"},
-                    }
-                }]
-            elif "invoice" in msg_lower:
-                tool_calls = [{
-                    "function": {"name": "get_erp_invoices", "arguments": {}}
-                }]
-            else:
-                return {
-                    "type": "text",
-                    "content": f"Understood: '{req.message}'. Please specify an ERP action (e.g. refund invoice or show invoices).",
-                }
+        except httpx.TimeoutException as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Ollama model {OLLAMA_MODEL} did not respond within {OLLAMA_TIMEOUT_SECONDS:g} seconds.",
+            ) from exc
+        except (httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Ollama model {OLLAMA_MODEL} is unavailable at the configured local endpoint.",
+            ) from exc
 
     # Process first tool call through ARG Governance
     tool_call = tool_calls[0]
@@ -187,6 +181,7 @@ def process_agent_chat(
             "type": "tool_executed",
             "tool": func_name,
             "status": "ALLOWED_READ_ONLY",
+            "model": llm_model,
             "data": invoices,
             "summary": f"Retrieved {len(invoices)} invoices from Enterprise ERP.",
         }
@@ -238,34 +233,40 @@ def process_agent_chat(
     risk_score = evaluation.get("risk", {}).get("score", 0)
 
     if decision_outcome == "REQUIRE_APPROVAL":
+        target_entity = action_data.get('target', '')
+        amt = action_data.get('impact', {}).get('amount', 0)
+        amt_str = f" of ₹{amt:,}" if amt else ""
         return {
             "type": "governance_paused",
             "status": "REQUIRE_APPROVAL",
+            "model": llm_model,
             "request_id": request_id,
             "risk_score": risk_score,
             "reason_codes": evaluation.get("reason_codes", []),
             "action_proposed": action_data,
             "agent_message": (
-                f"I proposed to execute {func_name} ({action_data['target']}, ₹{action_data['impact']['amount']:,}), "
-                f"but corporate policy paused this request (Risk: {risk_score}/100). "
-                f"Human approval is required. Request ID: {request_id}. "
-                f"No HTTP timeout occurred."
+                f"⏸️ [ARG GOVERNANCE PAUSED]: High-impact ERP mutation ({func_name} on {target_entity}{amt_str}) "
+                f"exceeds autonomous threshold (Risk: {risk_score}/100, Reason: {', '.join(evaluation.get('reason_codes', []))}). "
+                f"Action is staged safely for manager authorization in ARG Console. External ERP system of record remains untouched. "
+                f"Ticket ID: {request_id} (Zero HTTP timeout crash)."
             ),
         }
     elif decision_outcome == "ALLOW":
         return {
             "type": "governance_allowed",
             "status": "ALLOW",
+            "model": llm_model,
             "request_id": request_id,
             "risk_score": risk_score,
             "action_proposed": action_data,
-            "agent_message": f"Action allowed by policy. Ready to execute for request {request_id}.",
+            "agent_message": f"✅ [ARG GOVERNANCE ALLOWED]: Action verified within autonomous policy limits (Risk: {risk_score}/100). Cryptographic grant generated for request {request_id}.",
         }
     else:
         return {
             "type": "governance_denied",
             "status": "DENY",
+            "model": llm_model,
             "request_id": request_id,
             "reason_codes": evaluation.get("reason_codes", []),
-            "agent_message": f"Action blocked by policy rules: {evaluation.get('reason_codes')}",
+            "agent_message": f"🛑 [ARG POLICY BLOCKED]: Action denied by compliance rules: {', '.join(evaluation.get('reason_codes', []))}. System of record is protected.",
         }

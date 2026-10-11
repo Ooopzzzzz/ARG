@@ -19,6 +19,7 @@ def main() -> None:
         "AGENT_KEY_PEPPER": secrets.token_urlsafe(48),
         "OPERATOR_TOKEN": secrets.token_urlsafe(36),
         "ARG_DEMO_AGENT_KEY": f"arg_{secrets.token_urlsafe(36)}",
+        "ARG_ERP_SHARED_SECRET": secrets.token_urlsafe(48),
         "CORS_ORIGINS": "http://localhost:3000",
         "API_URL": "http://api:8000",
     }

@@ -4,7 +4,7 @@ Interactive Realtime LLM & External ERP Pipeline Test
 Connects:
 1. Real Local Ollama LLM (qwen2.5:7b)
 2. ARG Runtime Governance Gateway (Port 8000)
-3. Standalone External Enterprise ERP (Port 8080)
+3. Standalone External Enterprise ERP (Port 8082)
 """
 
 import json
@@ -24,7 +24,9 @@ if os.path.exists(env_path):
                 os.environ.setdefault(k.strip(), v.strip())
 
 ARG_API_URL = os.environ.get("ARG_API_URL", "http://localhost:8000")
-ERP_API_URL = os.environ.get("ERP_API_URL", "http://localhost:8080")
+ERP_API_URL = os.environ.get("ERP_API_URL", "http://localhost:8082")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 OPERATOR_TOKEN = os.environ.get("OPERATOR_TOKEN", "local-development-operator-token")
 DEMO_AGENT_KEY = os.environ.get("ARG_DEMO_AGENT_KEY", "local-development-demo-agent-key-minimum-24-chars")
 
@@ -39,7 +41,7 @@ def main():
     print("=" * 70)
 
     # 1. Health checks
-    log("1. Checking Northstar Enterprise ERP on :8080...")
+    log("1. Checking Northstar Enterprise ERP on :8082...")
     try:
         r = httpx.get(f"{ERP_API_URL}/health", timeout=3.0)
         assert r.status_code == 200
@@ -73,13 +75,43 @@ def main():
 
     # 3. Real LLM Turn through ARG Gateway
     prompt = "I need to process a ₹50,000 refund for customer Acme Corp on invoice INV-2088."
-    log(f"4. Sending prompt to Real LLM via ARG Gateway: '{prompt}'")
+    log(f"4. Sending prompt to local Ollama ({OLLAMA_MODEL}) and dispatching its tool call to ARG: '{prompt}'")
+    llm_started_at = time.monotonic()
+    tools_response = httpx.get(f"{ARG_API_URL}/api/v1/agent-gateway/tools", timeout=5.0)
+    tools_response.raise_for_status()
+    ollama_response = httpx.post(
+        f"{OLLAMA_URL}/api/chat",
+        json={
+            "model": OLLAMA_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an enterprise operations assistant connected to Northstar Enterprise ERP through ARG. "
+                        "Use the provided tool for invoice refunds. Do not claim an action has executed."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "tools": tools_response.json().get("tools", []),
+            "stream": False,
+        },
+        timeout=float(os.environ.get("OLLAMA_TIMEOUT_SECONDS", "120")) + 10.0,
+    )
+    ollama_response.raise_for_status()
+    ollama_data = ollama_response.json()
+    assert ollama_data.get("model") == OLLAMA_MODEL, f"Unexpected Ollama response model: {ollama_data.get('model')!r}"
+    ollama_message = ollama_data.get("message", {})
+    tool_calls = ollama_message.get("tool_calls", [])
+    assert tool_calls, f"Ollama did not propose an ERP tool call: {ollama_message.get('content', '')}"
+
     chat_res = httpx.post(
         f"{ARG_API_URL}/api/v1/agent-gateway/chat",
         headers={"Authorization": f"Bearer {DEMO_AGENT_KEY}"},
-        json={"message": prompt},
-        timeout=30.0,
+        json={"message": prompt, "tool_call": tool_calls[0]},
+        timeout=10.0,
     )
+    llm_elapsed = time.monotonic() - llm_started_at
     print(f"   -> Gateway Response Code: {chat_res.status_code}")
     chat_data = chat_res.json()
     print("   -> Gateway Response JSON:")
@@ -87,7 +119,7 @@ def main():
 
     assert chat_data.get("status") == "REQUIRE_APPROVAL", f"Expected REQUIRE_APPROVAL, got {chat_data}"
     req_id = chat_data.get("request_id")
-    print(f"\n   [TIMEOUT PREVENTED] LLM turn completed instantly in <2 seconds.")
+    print(f"\n   [OLLAMA] {OLLAMA_MODEL} proposed the tool call in {llm_elapsed:.1f}s; ARG staged approval without waiting for human review.")
     print(f"   [ACTION PAUSED] Ticket ID: {req_id}")
 
     # 4. Human Approval in ARG
@@ -128,7 +160,7 @@ def main():
     assert exec_data.get("status") == "EXECUTED"
 
     # 6. Verify ERP State Updated
-    log("8. Verifying External ERP state on :8080 after ARG dispatch...")
+    log("8. Verifying External ERP state on :8082 after ARG dispatch...")
     updated_invoices = httpx.get(f"{ERP_API_URL}/api/v1/erp/invoices").json()
     inv_2088 = next(i for i in updated_invoices if i["invoice_code"] == "INV-2088")
     print(f"   -> Invoice INV-2088 Refund Status: {inv_2088['refund_status']}")

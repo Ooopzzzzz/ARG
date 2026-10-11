@@ -12,6 +12,28 @@ ERP_API_BASE = os.environ.get("ERP_API_BASE", "http://localhost:8080")
 ERP_SHARED_SECRET = os.environ.get("ARG_ERP_SHARED_SECRET", "northstar-enterprise-shared-secret-2026")
 
 
+def _dispatch_to_erp(path: str, payload: dict[str, Any], proof_token: str) -> dict[str, Any]:
+    """Dispatch only through the ERP token-verifying HTTP boundary."""
+    last_connection_error: Exception | None = None
+    for base_url in (ERP_API_BASE, "http://host.docker.internal:8080", "http://172.19.0.1:8080"):
+        try:
+            with httpx.Client(base_url=base_url, timeout=httpx.Timeout(1.5, connect=0.5)) as client:
+                response = client.post(
+                    path,
+                    json=payload,
+                    headers={"X-ARG-Grant-Token": proof_token},
+                )
+            response.raise_for_status()
+            return response.json()
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            last_connection_error = exc
+            continue
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"External ERP rejected or failed the request: {exc}") from exc
+
+    raise RuntimeError("External ERP is unreachable at the configured endpoints") from last_connection_error
+
+
 def execute_enterprise_action(
     action: dict[str, Any],
     tenant_id: UUID,
@@ -21,8 +43,8 @@ def execute_enterprise_action(
 ) -> dict[str, Any]:
     """
     Executes an authorized action against Northstar Enterprise ERP.
-    1. Dispatches directly to the external standalone ERP server (port 8080) if available with cryptographic proof token.
-    2. Synchronizes local mirror database state so UI and audit views stay in complete sync.
+    Dispatches through the standalone ERP HTTP boundary with a cryptographic proof token.
+    The local ARG mirror is updated only after the ERP confirms the mutation.
     """
     action_type = action.get("type", "")
     target = action.get("target", "")
@@ -38,26 +60,16 @@ def execute_enterprise_action(
         ttl_seconds=300,
     )
 
-    external_result: dict[str, Any] | None = None
-
     # Try external ERP call if it's an invoice refund
     if "refund" in action_type or "refund" in str(parameters.get("status", "")):
         invoice_code = "INV-2088" if "2088" in target else "INV-1042"
         refund_val = int(action.get("impact", {}).get("amount", parameters.get("amount", 50000 if "2088" in target else 2500)))
 
-        # Call external ERP at :8080
-        try:
-            with httpx.Client(base_url=ERP_API_BASE, timeout=5.0) as client:
-                resp = client.post(
-                    f"/api/v1/erp/invoices/{invoice_code}/refund",
-                    json={"amount": refund_val, "reason": f"Authorized by ARG {rid_str}"},
-                    headers={"X-ARG-Grant-Token": proof_token},
-                )
-                if resp.status_code == 200:
-                    external_result = resp.json()
-        except Exception:
-            # External ERP might be running in another network mode or simulated; continue with local mirror
-            pass
+        external_result = _dispatch_to_erp(
+            f"/api/v1/erp/invoices/{invoice_code}/refund",
+            {"amount": refund_val, "reason": f"Authorized by ARG {rid_str}"},
+            proof_token,
+        )
 
         # Update local ERP mirror table
         invoice = session.scalar(
@@ -72,29 +84,16 @@ def execute_enterprise_action(
             invoice.notes = f"Authorized via ARG Governance (Token: {proof_token[:16]}...). Reason: {parameters.get('status', 'Customer request')}"
             session.flush()
 
-        if external_result:
-            return {
-                "adapter": "northstar_erp_v1_external",
-                "system": "Northstar Enterprise ERP (Port 8080)",
-                "entity": "Invoice",
-                "invoice_code": invoice_code,
-                "refund_status": "REFUNDED",
-                "refund_amount": refund_val,
-                "token_verified": True,
-                "message": f"External ERP ledger updated: Invoice {invoice_code} refund of ₹{refund_val:,} applied successfully.",
-                "external_erp_response": external_result,
-            }
-
         return {
-            "adapter": "northstar_erp_v1",
-            "system": "Northstar Enterprise ERP",
+            "adapter": "northstar_erp_v1_external",
+            "system": "Northstar Enterprise ERP (Port 8080)",
             "entity": "Invoice",
             "invoice_code": invoice_code,
             "refund_status": "REFUNDED",
             "refund_amount": refund_val,
             "token_verified": True,
-            "message": f"ERP Ledger updated: Invoice {invoice_code} refund of ₹{refund_val:,} applied successfully.",
-            "target": str(target),
+            "message": f"External ERP confirmed invoice {invoice_code} refund of ₹{refund_val:,}.",
+            "external_erp_response": external_result,
         }
 
     # Customer record status update
@@ -102,17 +101,11 @@ def execute_enterprise_action(
         cust_code = "CUST-2088" if "2088" in target else "CUST-1042"
         new_status = parameters.get("status", "UPDATED").upper()
 
-        try:
-            with httpx.Client(base_url=ERP_API_BASE, timeout=5.0) as client:
-                resp = client.post(
-                    f"/api/v1/erp/customers/{cust_code}/status",
-                    json={"status": new_status, "reason": f"Authorized by ARG {rid_str}"},
-                    headers={"X-ARG-Grant-Token": proof_token},
-                )
-                if resp.status_code == 200:
-                    external_result = resp.json()
-        except Exception:
-            pass
+        external_result = _dispatch_to_erp(
+            f"/api/v1/erp/customers/{cust_code}/status",
+            {"status": new_status, "reason": f"Authorized by ARG {rid_str}"},
+            proof_token,
+        )
 
         customer = session.scalar(
             select(ERPCustomer).where(
@@ -125,18 +118,13 @@ def execute_enterprise_action(
             session.flush()
 
         return {
-            "adapter": "northstar_erp_v1_external" if external_result else "northstar_erp_v1",
-            "system": "Northstar Enterprise ERP",
+            "adapter": "northstar_erp_v1_external",
+            "system": "Northstar Enterprise ERP (Port 8080)",
             "entity": "Customer",
             "customer_code": cust_code,
             "status": new_status,
-            "message": f"ERP Customer {cust_code} status transitioned to {new_status}.",
+            "message": f"External ERP confirmed customer {cust_code} status as {new_status}.",
             "external_erp_response": external_result,
         }
 
-    return {
-        "adapter": "northstar_erp_v1",
-        "system": "Northstar Enterprise ERP",
-        "message": f"ERP transaction executed on target {target}",
-        "target": str(target),
-    }
+    raise ValueError(f"Unsupported Northstar ERP action type: {action_type or 'empty'}")

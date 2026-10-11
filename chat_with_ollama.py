@@ -104,17 +104,28 @@ def main():
 
             status = data.get("status")
             if status == "REQUIRE_APPROVAL":
-                print("\n" + "!" * 70)
-                print(f"⏸️  [ARG GOVERNANCE PAUSED - RISK: {data.get('risk_score')}/100]")
-                print(f"Ticket ID: {data.get('request_id')}")
-                print(f"Reason:    {data.get('reason_codes')}")
-                print(f"Message:   {data.get('agent_message')}")
-                print("!" * 70)
-                print("\n👉 Go to the ARG Console at http://localhost:3000 -> 'Approvals' tab to review and approve!")
+                req_id = data.get("request_id")
+                score = data.get("risk_score")
+                reasons = ", ".join(data.get("reason_codes", []))
+                print("\n" + "═" * 74)
+                print(f" ⏸️  ARG RUNTIME GOVERNANCE PAUSED EXECUTION (Risk: {score}/100)")
+                print("═" * 74)
+                print(f" Ticket / Request ID: {req_id}")
+                print(f" Violation / Reason:  {reasons}")
+                print(f" Agent Explanation:   {data.get('agent_message')}")
+                print("─" * 74)
+                print(" 🛡️  System of Record Status: SAFE & UNTOUCHED (No mutation executed)")
+                print(" 🌐 ACTION REQUIRED: Open ARG Console at http://localhost:3000")
+                print("    Go to 'Approvals' tab -> Click 'Approve & Execute' to authorize.")
+                print("═" * 74)
             elif status == "ALLOW":
-                print(f"\n✅ [ARG ALLOWED]: {data.get('agent_message')}")
+                print("\n" + "─" * 74)
+                print(f" ✅ [ARG ALLOWED]: {data.get('agent_message')}")
+                print("─" * 74)
             elif status == "DENY":
-                print(f"\n🛑 [ARG BLOCKED]: {data.get('agent_message')}")
+                print("\n" + "─" * 74)
+                print(f" 🛑 [ARG BLOCKED]: {data.get('agent_message')}")
+                print("─" * 74)
             else:
                 print(f"\n[ARG RESPONSE]: {json.dumps(data, indent=2)}")
 

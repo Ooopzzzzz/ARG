@@ -543,8 +543,11 @@ def execute_request(
             action_hash=request.request_hash,
         )
     except Exception as exc:
-        result = execute_mock_action(request.action)
-        result["note"] = f"Fallback to mock adapter due to error: {str(exc)}"
+        session.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail="External ERP execution failed. No mock mutation was substituted; verify target state before retrying.",
+        ) from exc
 
     execution = Execution(
         tenant_id=agent.tenant_id, request_id=request.id, status="EXECUTED", result=result

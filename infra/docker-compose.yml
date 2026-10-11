@@ -22,6 +22,12 @@ services:
       AGENT_KEY_PEPPER: ${AGENT_KEY_PEPPER:?Set AGENT_KEY_PEPPER in .env}
       OPERATOR_TOKEN: ${OPERATOR_TOKEN:?Set OPERATOR_TOKEN in .env}
       ARG_DEMO_AGENT_KEY: ${ARG_DEMO_AGENT_KEY:?Set ARG_DEMO_AGENT_KEY in .env}
+      ARG_ERP_SHARED_SECRET: ${ARG_ERP_SHARED_SECRET:?Set ARG_ERP_SHARED_SECRET in .env}
+      ERP_API_BASE: http://erp:8080
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120}
+      OLLAMA_CONNECT_TIMEOUT_SECONDS: ${OLLAMA_CONNECT_TIMEOUT_SECONDS:-5}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     command: ["sh", "-c", "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
@@ -31,6 +37,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      erp:
+        condition: service_healthy
+
+  erp:
+    build:
+      context: ..
+      dockerfile: apps/erp/Dockerfile
+    environment:
+      ARG_ERP_SHARED_SECRET: ${ARG_ERP_SHARED_SECRET:?Set ARG_ERP_SHARED_SECRET in .env}
+      ERP_DB_PATH: /data/northstar_erp.db
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - arg-erp:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
   web:
     build:
@@ -46,3 +71,4 @@ services:
 
 volumes:
   arg-postgres:
+  arg-erp:

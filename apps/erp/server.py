@@ -1,9 +1,12 @@
 import os
+import re
 import sqlite3
 import time
+from html import escape
 from typing import Any
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 DB_PATH = os.environ.get("ERP_DB_PATH", "/tmp/northstar_erp.db")
@@ -14,6 +17,7 @@ app = FastAPI(
     description="Independent enterprise ERP representing a real third-party system governed by ARG.",
     version="1.0.0",
 )
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 
 
 def get_db():
@@ -134,109 +138,308 @@ class StatusPayload(BaseModel):
 def erp_dashboard():
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT customer_code, name, tier, status, email FROM erp_customers")
+    cursor.execute("SELECT customer_code, name, tier, status, email FROM erp_customers ORDER BY customer_code")
     customers = [dict(row) for row in cursor.fetchall()]
-    cursor.execute("SELECT invoice_code, customer_code, amount, status, refund_status, refund_amount, notes FROM erp_invoices")
+    cursor.execute("SELECT invoice_code, customer_code, amount, status, refund_status, refund_amount, notes FROM erp_invoices ORDER BY invoice_code")
     invoices = [dict(row) for row in cursor.fetchall()]
     cursor.execute("SELECT grant_id, consumed_at FROM erp_consumed_grants ORDER BY consumed_at DESC")
     consumed = [dict(row) for row in cursor.fetchall()]
     conn.close()
 
-    cust_rows = "".join(
-        f"<tr><td><code>{c['customer_code']}</code></td><td><b>{c['name']}</b></td><td>{c['tier']}</td><td><span class='badge {c['status'].lower()}'>{c['status']}</span></td><td>{c['email']}</td></tr>"
-        for c in customers
-    )
-    inv_rows_list = []
-    for i in invoices:
-        ref_text = f" (₹{i['refund_amount']:,})" if i['refund_status'] == 'REFUNDED' else ""
-        inv_rows_list.append(
-            f"<tr><td><code>{i['invoice_code']}</code></td><td>{i['customer_code']}</td><td><b>₹{i['amount']:,}</b></td>"
-            f"<td><span class='badge paid'>{i['status']}</span></td>"
-            f"<td><span class='badge {i['refund_status'].lower()}'>{i['refund_status']}{ref_text}</span></td>"
-            f"<td><small>{i['notes'] or 'Standard invoice'}</small></td></tr>"
-        )
-    inv_rows = "".join(inv_rows_list)
-    grant_rows = "".join(
-        f"<tr><td><code>{g['grant_id']}</code></td><td>{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(g['consumed_at']))}</td><td><span class='badge verified'>VERIFIED BY ARG</span></td></tr>"
-        for g in consumed
-    ) if consumed else "<tr><td colspan='3' style='text-align:center; color:#888;'>No cryptographic tokens consumed yet.</td></tr>"
+    def text(value: object) -> str:
+        return escape(str(value), quote=True)
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
+    def status_class(value: str) -> str:
+        normalized = value.upper()
+        if normalized in {"PAID", "ACTIVE", "REFUNDED", "VERIFIED"}:
+            return "state state--complete"
+        if normalized in {"PENDING", "REVIEW"}:
+            return "state state--review"
+        if normalized in {"SUSPENDED", "FAILED", "REJECTED"}:
+            return "state state--exception"
+        return "state state--neutral"
+
+    invoice_rows = []
+    for invoice in invoices:
+        invoice_code = text(invoice["invoice_code"])
+        customer_code = text(invoice["customer_code"])
+        amount = int(invoice["amount"])
+        refund_status = str(invoice["refund_status"])
+        refund_amount = int(invoice["refund_amount"])
+        refund_detail = f"₹{refund_amount:,} returned" if refund_status.upper() == "REFUNDED" else "No refund"
+        invoice_rows.append(
+            "<tr class=\"ledger-row\" data-search=\"{} {} {}\">"
+            "<td><code>{}</code></td><td><span class=\"account-code\">{}</span></td>"
+            "<td class=\"amount\">₹{:,}</td><td><span class=\"{}\">{}</span></td>"
+            "<td><span class=\"{}\">{}</span><small class=\"subvalue\">{}</small></td>"
+            "<td class=\"notes-cell\">{}</td></tr>".format(
+                invoice_code, customer_code, text(refund_status), invoice_code, customer_code, amount,
+                status_class(str(invoice["status"])), text(invoice["status"]),
+                status_class(refund_status), text(refund_status), text(refund_detail),
+                text(invoice["notes"] or "No note recorded"),
+            )
+        )
+
+    customer_rows = []
+    for customer in customers:
+        customer_code = text(customer["customer_code"])
+        customer_name = text(customer["name"])
+        customer_rows.append(
+            "<tr class=\"ledger-row\" data-search=\"{} {} {}\">"
+            "<td><code>{}</code></td><td><strong>{}</strong><small class=\"subvalue\">{}</small></td>"
+            "<td>{}</td><td><span class=\"{}\">{}</span></td></tr>".format(
+                customer_code, customer_name, text(customer["email"]), customer_code,
+                customer_name, text(customer["email"]), text(customer["tier"]),
+                status_class(str(customer["status"])), text(customer["status"]),
+            )
+        )
+
+    grant_rows = []
+    for grant in consumed:
+        grant_id = text(grant["grant_id"])
+        granted_at = int(grant["consumed_at"])
+        grant_rows.append(
+            "<tr class=\"ledger-row\" data-search=\"{} hmac verified\">"
+            "<td><code>{}</code></td><td><time datetime=\"{}\">{}</time></td>"
+            "<td><span class=\"state state--complete\">Verified and consumed</span></td></tr>".format(
+                grant_id, grant_id, time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(granted_at)),
+                time.strftime("%d %b %Y · %H:%M:%S", time.localtime(granted_at)),
+            )
+        )
+
+    active_count = sum(1 for customer in customers if str(customer["status"]).upper() == "ACTIVE")
+    refunded_count = sum(1 for invoice in invoices if str(invoice["refund_status"]).upper() == "REFUNDED")
+    page = """<!doctype html>
+<html lang=\"en\">
 <head>
-  <meta charset="UTF-8">
-  <title>Northstar Enterprise ERP (System of Record)</title>
+  <meta charset=\"utf-8\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+  <meta name=\"theme-color\" content=\"#f0f3ef\">
+  <title>Northstar | Invoice register</title>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background: #0f172a; color: #f8fafc; }}
-    .header {{ background: #1e293b; padding: 20px 32px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }}
-    .brand {{ font-size: 20px; font-weight: 700; letter-spacing: -0.5px; display: flex; align-items: center; gap: 12px; }}
-    .brand span {{ background: #3b82f6; color: white; padding: 4px 10px; border-radius: 6px; font-size: 14px; }}
-    .pill {{ background: #10b981; color: #022c22; font-weight: 600; padding: 4px 12px; border-radius: 12px; font-size: 12px; }}
-    .container {{ max-width: 1200px; margin: 32px auto; padding: 0 24px; }}
-    .card {{ background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 24px; margin-bottom: 24px; }}
-    .card-title {{ font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; }}
-    table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }}
-    th {{ background: #0f172a; color: #94a3b8; padding: 12px; border-bottom: 1px solid #334155; }}
-    td {{ padding: 12px; border-bottom: 1px solid #334155; }}
-    code {{ background: #0f172a; padding: 3px 6px; border-radius: 4px; font-size: 12px; color: #38bdf8; }}
-    .badge {{ padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }}
-    .badge.active, .badge.paid {{ background: rgba(16, 185, 129, 0.2); color: #34d399; }}
-    .badge.refunded {{ background: rgba(239, 68, 68, 0.2); color: #f87171; }}
-    .badge.none {{ background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }}
-    .badge.verified {{ background: rgba(59, 130, 246, 0.2); color: #60a5fa; }}
-    .security-banner {{ background: #0284c7; padding: 12px 18px; border-radius: 8px; font-size: 13px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; }}
-    .btn-refresh {{ background: #3b82f6; border: none; color: white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 500; text-decoration: none; font-size: 13px; }}
+    @font-face { font-family: "Fira Sans"; src: url("/static/fonts/FiraSans-Regular.otf") format("opentype"); font-style: normal; font-weight: 400; font-display: swap; }
+    @font-face { font-family: "Fira Sans"; src: url("/static/fonts/FiraSans-Medium.otf") format("opentype"); font-style: normal; font-weight: 500; font-display: swap; }
+    @font-face { font-family: "Fira Sans"; src: url("/static/fonts/FiraSans-SemiBold.otf") format("opentype"); font-style: normal; font-weight: 600; font-display: swap; }
+    @font-face { font-family: "Fira Mono"; src: url("/static/fonts/FiraMono-Regular.otf") format("opentype"); font-style: normal; font-weight: 400; font-display: swap; }
+    :root {
+      color-scheme: light;
+      --ground: #f0f3ef;
+      --surface: #ffffff;
+      --ink: #1d2b27;
+      --muted: #53635d;
+      --line: #d3ddd7;
+      --line-strong: #a9b8af;
+      --harbor: #215944;
+      --harbor-wash: #e6f1ea;
+      --vermilion: #963e2d;
+      --vermilion-wash: #f8e9e5;
+      --amber: #76500b;
+      --amber-wash: #f6efdc;
+      --mono: "Fira Mono", "SFMono-Regular", Consolas, monospace;
+      --sans: "Fira Sans", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 94px; }
+    body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.5 var(--sans); }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 3px solid var(--vermilion); outline-offset: 3px; }
+    .masthead { background: var(--surface); border-bottom: 1px solid var(--line-strong); }
+    .masthead-inner, .workspace { width: min(100% - 48px, 1320px); margin-inline: auto; }
+    .masthead-inner { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--harbor); color: var(--harbor); font: 700 11px/1 var(--mono); letter-spacing: -.08em; }
+    .brand-name { font-size: 15px; font-weight: 650; letter-spacing: -.015em; }
+    .brand-subtitle { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
+    .system-meta { display: flex; align-items: center; gap: 18px; color: var(--muted); font: 11px/1.3 var(--mono); }
+    .system-meta span { white-space: nowrap; }
+    .local-tag { padding: 7px 9px; color: var(--harbor); background: var(--harbor-wash); border: 1px solid #c4d8ca; }
+    .subnav { border-bottom: 1px solid var(--line); background: var(--surface); }
+    .subnav-inner { width: min(100% - 48px, 1320px); min-height: 48px; display: flex; align-items: stretch; gap: 26px; margin-inline: auto; }
+    .subnav a { display: inline-flex; align-items: center; border-bottom: 2px solid transparent; color: var(--muted); font-size: 13px; font-weight: 550; text-decoration: none; }
+    .subnav a:hover { color: var(--ink); border-color: var(--harbor); }
+    .workspace { padding: 34px 0 54px; }
+    .page-intro { display: flex; justify-content: space-between; align-items: end; gap: 28px; padding-bottom: 24px; }
+    h1, h2, p { margin-top: 0; }
+    h1 { margin-bottom: 7px; font-size: clamp(27px, 3vw, 36px); letter-spacing: -.04em; line-height: 1.12; font-weight: 600; }
+    .intro-copy { max-width: 68ch; margin-bottom: 0; color: var(--muted); font-size: 14px; }
+    .refresh-button { min-height: 44px; padding: 0 15px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
+    .refresh-button:hover { border-color: var(--harbor); color: var(--harbor); }
+    .proof-strip { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; padding: 12px 15px; border: 1px solid var(--line); background: #e8eeea; }
+    .proof-copy { color: var(--ink); font-size: 13px; }
+    .proof-copy strong { color: var(--harbor); font-weight: 650; }
+    .proof-code { color: var(--muted); font: 11px/1.4 var(--mono); white-space: nowrap; }
+    .register-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 26px; background: var(--surface); border: 1px solid var(--line); }
+    .summary-item { min-width: 0; padding: 14px 18px 15px; border-right: 1px solid var(--line); }
+    .summary-item:last-child { border-right: 0; }
+    .summary-item span, .summary-item strong { display: block; }
+    .summary-item span { color: var(--muted); font-size: 12px; }
+    .summary-item strong { margin-top: 3px; font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ledger-section { margin-top: 32px; scroll-margin-top: 92px; }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
+    .section-heading h2 { margin: 0; font-size: 20px; line-height: 1.25; font-weight: 600; letter-spacing: -.025em; }
+    .section-note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .section-count { color: var(--muted); font: 11px/1.4 var(--mono); white-space: nowrap; }
+    .ledger-frame { background: var(--surface); border: 1px solid var(--line); }
+    .table-tools { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
+    .table-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
+    .table-tools input { width: min(100%, 340px); min-height: 44px; padding: 7px 10px; border: 1px solid var(--line-strong); color: var(--ink); background: var(--surface); }
+    .result-count { color: var(--muted); font: 11px/1.4 var(--mono); }
+    .table-scroll { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { padding: 10px 14px; color: var(--muted); background: #f5f7f5; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
+    td { padding: 12px 14px; border-bottom: 1px solid #e8ede9; vertical-align: middle; font-size: 13px; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: #f7faf8; }
+    code, time, .account-code, .amount { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+    code { color: #254c3d; }
+    .amount { white-space: nowrap; text-align: right; }
+    .subvalue { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
+    .notes-cell { max-width: 300px; color: var(--muted); font-size: 12px; }
+    .state { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 8px; border: 1px solid transparent; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .state--complete { color: #174e38; background: var(--harbor-wash); border-color: #c4d8ca; }
+    .state--review { color: #68470b; background: var(--amber-wash); border-color: #e6d9b4; }
+    .state--exception { color: #873927; background: var(--vermilion-wash); border-color: #e8c7bf; }
+    .state--neutral { color: #46564f; background: #eef2ef; border-color: #dce4df; }
+    .empty-row td { padding: 24px; color: var(--muted); text-align: center; }
+    .grant-table th, .grant-table td { padding-block: 14px; }
+    .footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 38px; padding-top: 14px; border-top: 1px solid var(--line-strong); color: var(--muted); font-size: 11px; }
+    .footer code { font-size: 10px; }
+    @media (max-width: 760px) {
+      .masthead-inner, .workspace, .subnav-inner { width: min(100% - 32px, 1320px); }
+      .masthead-inner { min-height: 64px; }
+      .system-meta { gap: 8px; }
+      .system-meta .last-sync { display: none; }
+      .subnav-inner { gap: 22px; overflow-x: auto; }
+      .subnav a { min-height: 46px; white-space: nowrap; }
+      .workspace { padding-top: 25px; }
+      .page-intro { align-items: start; }
+      .proof-strip { align-items: start; flex-direction: column; gap: 5px; }
+      .register-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary-item:nth-child(2) { border-right: 0; }
+      .summary-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .table-tools { align-items: stretch; flex-direction: column; }
+      .table-tools input { width: 100%; }
+      .result-count { align-self: start; }
+      .ledger-section { margin-top: 25px; }
+      .footer { flex-direction: column; }
+    }
+    @media (max-width: 480px) {
+      .masthead-inner, .workspace, .subnav-inner { width: min(100% - 24px, 1320px); }
+      .brand { gap: 9px; }
+      .brand-name { font-size: 13px; }
+      .brand-subtitle { font-size: 10px; }
+      .brand-mark { width: 30px; height: 30px; }
+      .system-meta { display: grid; justify-items: end; font-size: 9px; }
+      .local-tag { padding: 5px 6px; }
+      .page-intro { flex-direction: column; gap: 15px; }
+      .refresh-button { width: 100%; }
+      .section-heading { align-items: start; flex-direction: column; gap: 4px; }
+      .table-scroll table { min-width: 710px; }
+      .grant-table { min-width: 560px !important; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="brand">
-      <span>ERP</span> Northstar Global Logistics — Enterprise ERP
+  <header class=\"masthead\">
+    <div class=\"masthead-inner\">
+      <a class=\"brand\" href=\"/\" aria-label=\"Northstar home\">
+        <span class=\"brand-mark\" aria-hidden=\"true\">NS</span>
+        <span><span class=\"brand-name\">Northstar Freight Core</span><span class=\"brand-subtitle\">Accounts and customer records</span></span>
+      </a>
+      <div class=\"system-meta\"><span class=\"local-tag\">LOCAL · SYNTHETIC</span><span class=\"last-sync\">LEDGER · SQLITE</span></div>
     </div>
-    <div>
-      <span class="pill">STANDALONE PORT 8080</span>
-      <a href="/" class="btn-refresh" style="margin-left: 12px;">↻ Refresh Ledger</a>
-    </div>
-  </div>
+  </header>
+  <nav class=\"subnav\" aria-label=\"Ledger sections\"><div class=\"subnav-inner\">
+    <a href=\"#invoices\">Invoice register</a><a href=\"#customers\">Customer accounts</a><a href=\"#grants\">ARG grant receipts</a>
+  </div></nav>
+  <main class=\"workspace\">
+    <section class=\"page-intro\" aria-labelledby=\"page-title\">
+      <div><h1 id=\"page-title\">Invoice register</h1><p class=\"intro-copy\">Review Northstar billing records and confirm which refunds have reached the local ledger.</p></div>
+      <button class=\"refresh-button\" type=\"button\" onclick=\"window.location.reload()\">Refresh ledger</button>
+    </section>
+    <section class=\"proof-strip\" aria-label=\"ARG execution boundary\">
+      <div class=\"proof-copy\"><strong>ARG grant required</strong> · Direct ledger mutations are rejected without a verified, single-use proof token.</div>
+      <div class=\"proof-code\">GATEWAY → REVIEW → ERP</div>
+    </section>
+    <section class=\"register-summary\" aria-label=\"Ledger summary\">
+      <div class=\"summary-item\"><span>Invoice records</span><strong>{invoice_count}</strong></div>
+      <div class=\"summary-item\"><span>Customer accounts</span><strong>{customer_count}</strong></div>
+      <div class=\"summary-item\"><span>Active accounts</span><strong>{active_count}</strong></div>
+      <div class=\"summary-item\"><span>Refunded invoices</span><strong>{refunded_count}</strong></div>
+    </section>
 
-  <div class="container">
-    <div class="security-banner">
-      <div>🛡️ <b>ARG RUNTIME GOVERNANCE ENFORCED:</b> Direct external write access is strictly forbidden (HTTP 403). Mutations require HMAC-SHA256 verified single-use <code>X-ARG-Grant-Token</code>.</div>
-    </div>
+    <section class=\"ledger-section\" id=\"invoices\" aria-labelledby=\"invoice-title\">
+      <div class=\"section-heading\"><div><h2 id=\"invoice-title\">Accounts receivable</h2><p class=\"section-note\">Invoice value, accounting state, and refund outcome.</p></div><span class=\"section-count\">{invoice_count} RECORDS</span></div>
+      <div class=\"ledger-frame\">
+        <div class=\"table-tools\"><label for=\"invoice-search\">Find an invoice or customer<input id=\"invoice-search\" type=\"search\" placeholder=\"Invoice code or customer code\" autocomplete=\"off\"></label><span class=\"result-count\" id=\"invoice-count\" aria-live=\"polite\">Showing {invoice_count} invoices</span></div>
+        <div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"Invoice register table; scroll horizontally to view all columns\"><table><thead><tr>
+          <th scope=\"col\">Invoice</th><th scope=\"col\">Customer account</th><th scope=\"col\">Billed amount</th><th scope=\"col\">Billing state</th><th scope=\"col\">Refund outcome</th><th scope=\"col\">Ledger note</th>
+        </tr></thead><tbody id=\"invoice-rows\">{invoice_rows}<tr class=\"empty-row\" id=\"invoice-empty\" hidden><td colspan=\"6\">No invoices match this search.</td></tr></tbody></table></div>
+      </div>
+    </section>
 
-    <div class="card">
-      <div class="card-title">Financial Invoices & Ledger Status</div>
-      <table>
-        <thead>
-          <tr><th>Invoice Code</th><th>Customer</th><th>Invoice Amount</th><th>Billing Status</th><th>Refund Ledger State</th><th>Notes</th></tr>
-        </thead>
-        <tbody>{inv_rows}</tbody>
-      </table>
-    </div>
+    <section class=\"ledger-section\" id=\"customers\" aria-labelledby=\"customer-title\">
+      <div class=\"section-heading\"><div><h2 id=\"customer-title\">Customer accounts</h2><p class=\"section-note\">Registered companies, account tier, and current standing.</p></div><span class=\"section-count\">{customer_count} ACCOUNTS · {active_count} ACTIVE</span></div>
+      <div class=\"ledger-frame\">
+        <div class=\"table-tools\"><label for=\"customer-search\">Find a customer<input id=\"customer-search\" type=\"search\" placeholder=\"Code, company, or contact\" autocomplete=\"off\"></label><span class=\"result-count\" id=\"customer-count\" aria-live=\"polite\">Showing {customer_count} accounts</span></div>
+        <div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"Customer accounts table; scroll horizontally to view all columns\"><table><thead><tr>
+          <th scope=\"col\">Account code</th><th scope=\"col\">Company and contact</th><th scope=\"col\">Commercial tier</th><th scope=\"col\">Account standing</th>
+        </tr></thead><tbody id=\"customer-rows\">{customer_rows}<tr class=\"empty-row\" id=\"customer-empty\" hidden><td colspan=\"4\">No accounts match this search.</td></tr></tbody></table></div>
+      </div>
+    </section>
 
-    <div class="card">
-      <div class="card-title">Customer Accounts Registry</div>
-      <table>
-        <thead>
-          <tr><th>Customer Code</th><th>Company Name</th><th>Tier</th><th>Account Status</th><th>Billing Email</th></tr>
-        </thead>
-        <tbody>{cust_rows}</tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Cryptographic Execution Grants Verified & Consumed</div>
-      <table>
-        <thead>
-          <tr><th>ARG Grant Request ID</th><th>Execution Timestamp</th><th>Cryptographic Security Status</th></tr>
-        </thead>
-        <tbody>{grant_rows}</tbody>
-      </table>
-    </div>
-  </div>
+    <section class=\"ledger-section\" id=\"grants\" aria-labelledby=\"grant-title\">
+      <div class=\"section-heading\"><div><h2 id=\"grant-title\">ARG grant receipts</h2><p class=\"section-note\">Single-use proofs consumed by this ERP ledger.</p></div><span class=\"section-count\">{grant_count} RECEIPTS</span></div>
+      <div class=\"ledger-frame\"><div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"ARG grant receipts table; scroll horizontally to view all columns\"><table class=\"grant-table\"><thead><tr>
+        <th scope=\"col\">ARG request ID</th><th scope=\"col\">Consumed at</th><th scope=\"col\">Verification result</th>
+      </tr></thead><tbody>{grant_rows}<tr class=\"empty-row\" {grant_hidden}><td colspan=\"3\">No ARG grants have been consumed by this ERP yet.</td></tr></tbody></table></div></div>
+    </section>
+    <footer class=\"footer\"><span>Northstar Global Logistics · Local synthetic ledger</span><span>Mutations require ARG proof verification</span></footer>
+  </main>
+  <script>
+    function bindLedgerSearch(inputId, rowsId, emptyId, countId, noun) {
+      const input = document.getElementById(inputId);
+      const rows = Array.from(document.querySelectorAll(`#${rowsId} .ledger-row`));
+      const empty = document.getElementById(emptyId);
+      const counter = document.getElementById(countId);
+      if (!(input instanceof HTMLInputElement) || !(empty instanceof HTMLTableRowElement) || !counter) return;
+      input.addEventListener('input', () => {
+        const query = input.value.trim().toLocaleLowerCase();
+        let visible = 0;
+        for (const row of rows) {
+          const matches = row.dataset.search?.toLocaleLowerCase().includes(query) ?? false;
+          row.hidden = !matches;
+          if (matches) visible += 1;
+        }
+        empty.hidden = visible > 0;
+        counter.textContent = `Showing ${visible} ${noun}`;
+      });
+    }
+    bindLedgerSearch('invoice-search', 'invoice-rows', 'invoice-empty', 'invoice-count', 'invoices');
+    bindLedgerSearch('customer-search', 'customer-rows', 'customer-empty', 'customer-count', 'accounts');
+  </script>
 </body>
 </html>"""
-    return HTMLResponse(content=html)
+
+    replacements = {
+        "{invoice_count}": str(len(invoices)),
+        "{customer_count}": str(len(customers)),
+        "{active_count}": str(active_count),
+        "{refunded_count}": str(refunded_count),
+        "{invoice_rows}": "".join(invoice_rows),
+        "{customer_rows}": "".join(customer_rows),
+        "{grant_count}": str(len(consumed)),
+        "{grant_rows}": "".join(grant_rows),
+        "{grant_hidden}": "hidden" if consumed else "",
+    }
+    marker_pattern = re.compile(r"\{(?:invoice_count|customer_count|active_count|refunded_count|invoice_rows|customer_rows|grant_count|grant_rows|grant_hidden)\}")
+    page = marker_pattern.sub(lambda match: replacements[match.group(0)], page)
+    return HTMLResponse(content=page)
 
 
 @app.get("/health")

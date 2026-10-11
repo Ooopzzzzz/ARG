@@ -28,7 +28,7 @@ type ChatMessage = { id: string; sender: "user" | "agent"; text: string; tag?: "
 const navigation: { id: Section; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "erp", label: "Enterprise ERP Portal" },
-  { id: "agent-chat", label: "Live AI Agent (Chat)" },
+  { id: "agent-chat", label: "Agent chat demo" },
   { id: "approvals", label: "Approvals" },
   { id: "policies", label: "Policies" },
   { id: "agents", label: "Agents" },
@@ -89,9 +89,10 @@ export default function Home() {
       timestamp: new Date().toLocaleTimeString(),
     },
   ]);
+  const [lastSyncTime, setLastSyncTime] = useState<string>("");
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     setError(null);
     try {
       const [overviewData, agentData, policyData, approvalData, approvedData, eventData, erpData] = await Promise.all([
@@ -107,10 +108,13 @@ export default function Home() {
       setEvents(eventData);
       setErpCustomers(erpData.customers);
       setErpInvoices(erpData.invoices);
+      setLastSyncTime(new Date().toLocaleTimeString());
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "ARG could not load the console data");
+      if (!isBackground) {
+        setError(reason instanceof Error ? reason.message : "ARG could not load the console data");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   }, []);
 
@@ -126,6 +130,28 @@ export default function Home() {
     }).catch(() => { if (mounted) { setSessionLoaded(true); setLoading(false); setError("Could not check operator session."); } });
     return () => { mounted = false; };
   }, [refresh]);
+
+  // Real-time live polling (2.5s) and tab focus synchronization
+  useEffect(() => {
+    if (!authenticated) return;
+    const interval = setInterval(() => {
+      void refresh(true);
+    }, 2500);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refresh(true);
+      }
+    };
+    window.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("focus", onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("focus", onVisibilityChange);
+    };
+  }, [authenticated, refresh]);
 
   const activePolicy = useMemo(() => policies.find((policy) => policy.active), [policies]);
   const demoAgentAvailable = agents.some((agent) => agent.name === "Customer Operations Agent" && agent.enabled);
@@ -403,7 +429,16 @@ export default function Home() {
         </aside>
 
         <main className="main-content">
-          <header className="topbar"><div><span className="crumb">Northstar Demo <span>/</span> {navigation.find((item) => item.id === section)?.label}</span></div><div className="topbar-right"><Badge appearance="tint" color="success">DEVELOPMENT</Badge><span className="operator-chip">Local operator</span></div></header>
+          <header className="topbar">
+            <div><span className="crumb">Northstar Demo <span>/</span> {navigation.find((item) => item.id === section)?.label}</span></div>
+            <div className="topbar-right">
+              <span className="operator-chip" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#059669", borderColor: "rgba(16, 185, 129, 0.3)" }}>
+                🟢 Live Sync Active (2.5s){lastSyncTime ? ` · ${lastSyncTime}` : ""}
+              </span>
+              <Badge appearance="tint" color="success">DEVELOPMENT</Badge>
+              <span className="operator-chip">Local operator</span>
+            </div>
+          </header>
           <section className="page-head"><div><Text className="eyebrow">AI ACTION CONTROL</Text><h1>{section === "overview" ? "Governance overview" : navigation.find((item) => item.id === section)?.label}</h1><p>{section === "overview" ? "Review agent activity and control every simulated action before it reaches a target." : section === "approvals" ? "Inspect action context and risk before authorizing a pending request." : "Manage the runtime controls that shape every governed action."}</p></div><Button appearance="secondary" onClick={() => void refresh()} disabled={loading}>Refresh data</Button></section>
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
           {notice && <MessageBar intent="info"><MessageBarBody>{notice}</MessageBarBody></MessageBar>}
@@ -486,9 +521,9 @@ export default function Home() {
                 </div>
               </section>}
               {section === "agent-chat" && <section className="panel">
-                <PanelHeader title="Interactive AI Agent — Governed Execution Sandbox" detail="Prompt the autonomous AI agent in natural language. Watch ARG intercept tools in real-time." />
+                <PanelHeader title="Agent request sandbox" detail="This browser demo uses deterministic intent parsing. For local Ollama tool calling, use the host CLI." />
                 <div style={{ margin: "10px 0", fontSize: "12px", color: "var(--muted)" }}>
-                  💡 <b>Try prompting:</b>
+                  <b>Example requests:</b>
                   <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
                     <li>Routine (ALLOW): <i>&quot;Update customer CUST-1042 address and mark account active&quot;</i></li>
                     <li>High Impact (REQUIRE APPROVAL): <i>&quot;Issue an emergency refund of 50,000 INR for customer CUST-2088&quot;</i></li>
@@ -541,7 +576,7 @@ export default function Home() {
               {section === "audit" && <section className="panel"><PanelHeader title="Append-only audit events" detail="Trace decisions, approvals, administrative changes, and mock execution outcomes." /><AuditList events={events} /></section>}
             </>
           )}
-          <footer className="page-footer"><span>ARG runtime governance prototype</span><span>Actions are simulated. No enterprise system is connected.</span></footer>
+          <footer className="page-footer"><span>ARG runtime governance prototype</span><span>Scenario actions use the mock adapter; approved ERP requests use the synthetic Northstar service.</span></footer>
         </main>
       </div>
     </FluentProvider>

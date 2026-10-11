@@ -4,6 +4,34 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T05:33:29+05:30 — Redesign synthetic ERP ledger and verify Ollama route
+
+- Changed: Reworked the standalone ERP at `apps/erp/server.py` into a responsive invoice, customer, and ARG grant register; added self-hosted Fira Sans/Mono files and OFL notice; documented its design system in `apps/erp/DESIGN.md` and `.impeccable/design.json`. Removed the gateway's silent heuristic fallback when Ollama is unavailable, added bounded timeout handling and model attribution, configured Compose Ollama settings, and updated the real CLI integration check and setup guide.
+- Why: Make the external ERP demo legible and distinct from a generic admin dashboard, and ensure a claimed model-backed route cannot silently report success after falling back to deterministic parsing.
+- Validation: `impeccable detect --json apps/erp/server.py` returned no findings; desktop and mobile screenshots at 1440×1000 and 390×844 were reviewed; Python compilation and `git diff --check` passed. The host CLI pipeline used qwen2.5:7b to produce a refund tool call, ARG paused it for review, and after approval its single-use proof was accepted by the synthetic ERP. Direct unauthenticated mutation returned 403.
+- Limitations: The host Ollama service is bound to loopback, so the API container cannot call it at `host.docker.internal`; the verified supported flow is the host CLI. The browser chat remains deterministic. The already-running ERP process on port 8080 has not been restarted, so it still needs a restart to load this UI revision.
+
+## 2026-10-11T05:44:38+05:30 — Route enterprise execution through the ERP service
+
+- Changed: Removed direct SQLite mutation and mock-success fallbacks from enterprise execution; unsupported action types now fail explicitly. Added an ERP Compose service with persistent storage and a random shared proof-token secret; ARG dispatches to it over the service network, and the local UI/test endpoint uses loopback port 8082. Existing host ERP on 8080 is left separate.
+- Why: The live integration revealed that the prior gateway could claim a successful enterprise mutation even when the ERP HTTP boundary was unreachable. Failed dispatch now returns 502 without claiming a mutation.
+- Validation: `python3 test_realtime_pipeline.py` passed against qwen2.5:7b: direct unauthenticated mutation returned 403, ARG paused the high-risk request for approval, the updated API dispatched a one-time proof to the ERP service, and the ERP confirmed invoice INV-2088 refunded for ₹50,000. Rebuilt the final API after the unsupported-action guard and confirmed `/health/ready`; Python compilation, web typecheck, and `git diff --check` passed.
+- Limitations: The host CLI still makes the model call; the browser chat remains deterministic. The prior host ERP process on port 8080 remains separate; Compose publishes the redesigned synthetic ERP on loopback port 8082.
+
+## 2026-10-11T05:43:25+05:30 — Clarify the ARG console execution paths
+
+- Changed: Renamed the browser chat tab and revised its description to identify its deterministic parser; updated the footer to distinguish mock scenarios from approved requests sent to the synthetic ERP.
+- Why: The previous copy described the browser path as live autonomous AI and said no ERP was connected, which no longer matched the implementation.
+- Validation: Web typecheck and diff whitespace check passed.
+- Limitations: The browser chat still does not call Ollama; the host CLI is the verified model path.
+
+## 2026-10-11T05:14:06+05:30 — Verify real Ollama to ARG to Northstar ERP flow
+
+- Changed: Removed silent heuristic fallback from the API's Ollama path, configured model/connect timeouts, and changed `test_realtime_pipeline.py` to generate a real tool call with host Ollama before submitting it to ARG. Updated README setup and limitations to distinguish the verified CLI flow from the deterministic browser chat.
+- Why: The previous integration check returned a heuristic tool call that looked like an Ollama result. The local model was reachable from the host, while the API container could not reach Ollama bound to host loopback.
+- Validation: `python3 test_realtime_pipeline.py` passed with `qwen2.5:7b` generating the refund call in 31.7s; direct ERP mutation returned 403; ARG required approval; the approved single-use HMAC grant updated the synthetic invoice. `qwen2.5:7b` host `/api/tags` and a direct text generation request returned successfully.
+- Limitations: The API container cannot reach host Ollama while it listens only on loopback. The verified path is `chat_with_ollama.py`, which calls Ollama on the host and dispatches its tool call to ARG. The browser chat remains deterministic; Northstar ERP data is synthetic.
+
 ## 2026-10-11T02:40:00+05:30 — Realtime LLM to External ERP Pipeline and Non-Blocking Claim-Check Governance
 
 - Changed: Added standalone External Enterprise ERP app (`apps/erp/server.py`) running on port 8080 with independent SQLite ledger and cryptographic proof verification; created `apps/api/app/security_tokens.py` implementing HMAC-SHA256 single-use proof token minting and replay attack prevention; implemented `apps/api/app/agent_gateway.py` with OpenAPI tool definitions compatible with OpenAI Custom Actions / Ollama tool calling and non-blocking asynchronous claim-check pattern (preventing 30-second HTTP connection drops during human review); added `test_realtime_pipeline.py` testing the complete end-to-end pipeline (Real LLM -> Instant Pause & Ticket Minting -> Human Operator Approval -> Token Minting -> ERP Mutation); fixed offset-naive datetime comparisons in `execute_request` and `transition_approval`.
