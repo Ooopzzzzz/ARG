@@ -172,11 +172,24 @@ def process_agent_chat(
 
     # Handle read-only tool
     if func_name == "get_erp_invoices":
-        try:
-            with httpx.Client(base_url="http://localhost:8080", timeout=5.0) as erp_client:
-                invoices = erp_client.get("/api/v1/erp/invoices").json()
-        except Exception:
-            invoices = []
+        erp_bases = [
+            os.environ.get("ERP_API_BASE", "http://localhost:8080"),
+            "http://erp:8080",
+            "http://host.docker.internal:8080",
+            "http://172.19.0.1:8080",
+            "http://localhost:8080",
+            "http://localhost:8082",
+        ]
+        invoices = []
+        for base_url in erp_bases:
+            try:
+                with httpx.Client(base_url=base_url, timeout=3.0) as erp_client:
+                    res = erp_client.get("/api/v1/erp/invoices")
+                    if res.status_code == 200:
+                        invoices = res.json()
+                        break
+            except Exception:
+                continue
         return {
             "type": "tool_executed",
             "tool": func_name,

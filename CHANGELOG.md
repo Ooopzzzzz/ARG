@@ -4,6 +4,22 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T07:42:00+05:30 — Knowledge base audit, live invoice query resolution, and UI/accessibility polish
+
+- Changed:
+  1. Pipeline: In `apps/api/app/agent_gateway.py`, updated `get_erp_invoices` to resolve external ERP across dynamic Docker bridge and host addresses (`ERP_API_BASE`, `http://erp:8080`, `http://host.docker.internal:8080`, `http://localhost:8082`) instead of hardcoded localhost port 8080.
+  2. ARG Console UI/Theming: In `apps/web/app/page.tsx` and `apps/web/app/globals.css`, replaced default `webLightTheme` with custom `argTheme` featuring spruce green brand tokens (`#176b58`), replacing Microsoft Azure Blue buttons and focus rings. Replaced raw Unicode emojis (`🧠`, `🛡️`, `🏛️`, `⚡`, `🟢`, `⏸️`, `🛑`) with official `@fluentui/react-icons` (`BotRegular`, `ShieldCheckmarkRegular`, `BuildingBankRegular`, `FlashRegular`, `ArrowSyncCircleRegular`, `PauseCircleRegular`, `LockClosedRegular`).
+  3. Accessibility & Layout: Demoted `ApprovalCard` heading to `<h3>` to adhere to WCAG hierarchy, corrected deleted customer badge class to `.erp-badge-deleted`, upgraded micro-copy font scale to 12px, fixed breadcrumb contrast (`#6c7c88`), and added mobile single-column breakpoints for the architecture topology strip.
+  4. External ERP UX: In `apps/erp/server.py`, added keyboard accessibility (`tabindex="0"`, `role="button"`, `Enter`/`Space` listeners) and auto-synchronization for the Cryptographic Settlement Inspector on initial load; added mobile responsive layout rules for masthead, gateway strip, and manifest sheet.
+- Why: Complete the comprehensive end-to-end architecture audit against the 39-document private product knowledge base, eliminate all generic AI/template aesthetic slop, and ensure keyboard/mobile accessibility.
+- Validation:
+  - `python3 -m py_compile apps/erp/server.py` and `apps/api/app/agent_gateway.py` compiled without errors.
+  - `npm --prefix apps/web run typecheck` and `npm --prefix apps/web run build` passed with zero errors.
+  - Live Ollama pipeline: `echo "show me all invoices" | python3 chat_with_ollama.py` retrieved both `INV-1042` and `INV-2088` from external ERP.
+  - `python3 test_realtime_pipeline.py` ran end-to-end against live `qwen2.5:7b`: direct mutation blocked (403), high-risk refund paused and staged (Ticket ID generated), human approval signed, single-use HMAC-SHA256 grant verified, and invoice INV-2088 refunded for ₹50,000.
+  - `git diff --check` passed cleanly with no whitespace errors.
+- Limitations: Local Ollama tool calling runs via the host CLI bridge due to Docker loopback isolation.
+
 ## 2026-10-11T07:11:00+05:30 — Sanitize empty LLM tool arguments and add gateway error handling in CLI chat
 
 - Changed: Added input sanitization and fallback defaults in `apps/api/app/agent_gateway.py` so that when Ollama proposes empty string values (`invoice_code=""` or missing `customer_code`), ARG defaults to valid target identifiers (`INV-2088` / `CUST-1042`) instead of failing Pydantic `min_length=3` validation with a 500. Updated `chat_with_ollama.py` system prompt to instruct the model to use `INV-2088` by default when the user does not specify an invoice code, and added HTTP status checks before parsing JSON responses.

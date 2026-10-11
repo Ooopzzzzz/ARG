@@ -10,9 +10,28 @@ import {
   Tab,
   TabList,
   Text,
-  webLightTheme,
+  createLightTheme,
 } from "@fluentui/react-components";
+import {
+  ArrowSyncCircleRegular,
+  BotRegular,
+  BuildingBankRegular,
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  FlashRegular,
+  LockClosedRegular,
+  PauseCircleRegular,
+  ShieldCheckmarkRegular,
+  WarningRegular,
+} from "@fluentui/react-icons";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+
+const spruceRamp = {
+  10: "#02120e", 20: "#06231c", 30: "#0b352a", 40: "#104739", 50: "#145948",
+  60: "#176b58", 70: "#1e836c", 80: "#279c81", 90: "#32b697", 100: "#44cbae",
+  110: "#5ee0c3", 120: "#7ef3d7", 130: "#a3fbe7", 140: "#c7fdf1", 150: "#e3fef8", 160: "#f3fffc"
+};
+const argTheme = createLightTheme(spruceRamp);
 
 type Section = "overview" | "erp" | "agent-chat" | "agents" | "policies" | "approvals" | "audit";
 type Agent = { id: string; name: string; enabled: boolean; key_prefix: string };
@@ -356,7 +375,7 @@ export default function Home() {
             {
               id: String(Date.now() + 1),
               sender: "agent",
-              text: `✅ [ARG ALLOWED]: ${msgText}`,
+              text: `[ARG ALLOWED]: ${msgText}`,
               tag: "executed",
               timestamp: new Date().toLocaleTimeString(),
             },
@@ -369,7 +388,7 @@ export default function Home() {
             {
               id: String(Date.now() + 1),
               sender: "agent",
-              text: `⏸️ [ARG PAUSED]: Risk Score is ${result.risk.score}/100 (${result.reason_codes.join(", ")}). This high-impact mutation is paused for human authorization in the Approvals tab (Request: ${result.request_id.slice(0, 8)}). The ERP has NOT been touched.`,
+              text: `[ARG PAUSED]: Risk Score is ${result.risk.score}/100 (${result.reason_codes.join(", ")}). This high-impact mutation is paused for human authorization in the Approvals tab (Request: ${result.request_id.slice(0, 8)}). The ERP has NOT been touched.`,
               tag: "intercepted",
               timestamp: new Date().toLocaleTimeString(),
             },
@@ -382,7 +401,7 @@ export default function Home() {
             {
               id: String(Date.now() + 1),
               sender: "agent",
-              text: `🛑 [ARG BLOCKED]: Action denied by policy guardrail (${result.reason_codes.join(", ")}). The enterprise ERP remains strictly protected.`,
+              text: `[ARG BLOCKED]: Action denied by policy guardrail (${result.reason_codes.join(", ")}). The enterprise ERP remains strictly protected.`,
               tag: "blocked",
               timestamp: new Date().toLocaleTimeString(),
             },
@@ -397,7 +416,7 @@ export default function Home() {
           {
             id: String(Date.now() + 1),
             sender: "agent",
-            text: `⚠️ Error communicating with ARG: ${err instanceof Error ? err.message : "Failed"}`,
+            text: `[COMMUNICATION ERROR]: ${err instanceof Error ? err.message : "Failed to communicate with ARG gateway"}`,
             tag: "blocked",
             timestamp: new Date().toLocaleTimeString(),
           },
@@ -417,9 +436,9 @@ export default function Home() {
     await submitPrompt(prompt, true);
   }
 
-  if (!sessionLoaded) return <FluentProvider theme={webLightTheme}><div className="session-loading"><Spinner label="Checking operator session" /></div></FluentProvider>;
+  if (!sessionLoaded) return <FluentProvider theme={argTheme}><div className="session-loading"><Spinner label="Checking operator session" /></div></FluentProvider>;
   if (!authenticated) return (
-    <FluentProvider theme={webLightTheme}>
+    <FluentProvider theme={argTheme}>
       <main className="login-shell"><form className="login-panel" onSubmit={(event) => void signIn(event)}>
         <div className="brand login-brand"><span className="brand-mark">A</span><span><strong>ARG</strong><small>Runtime Governance</small></span></div>
         <Text className="eyebrow">LOCAL OPERATOR ACCESS</Text><h1>Sign in to ARG</h1>
@@ -433,7 +452,7 @@ export default function Home() {
   );
 
   return (
-    <FluentProvider theme={webLightTheme}>
+    <FluentProvider theme={argTheme}>
       <div className="shell">
         <aside className="sidebar" aria-label="Primary navigation">
           <div className="brand"><span className="brand-mark">A</span><span><strong>ARG</strong><small>Runtime Governance</small></span></div>
@@ -449,8 +468,8 @@ export default function Home() {
           <header className="topbar">
             <div><span className="crumb">Northstar Demo <span>/</span> {navigation.find((item) => item.id === section)?.label}</span></div>
             <div className="topbar-right">
-              <span className="operator-chip" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#059669", borderColor: "rgba(16, 185, 129, 0.3)" }}>
-                🟢 Live Sync Active (2.5s){lastSyncTime ? ` · ${lastSyncTime}` : ""}
+              <span className="operator-chip" style={{ background: "rgba(23, 107, 88, 0.08)", color: "#176b58", borderColor: "rgba(23, 107, 88, 0.25)", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <ArrowSyncCircleRegular style={{ fontSize: 14 }} /> Live Sync Active (2.5s){lastSyncTime ? ` · ${lastSyncTime}` : ""}
               </span>
               <Badge appearance="tint" color="success">DEVELOPMENT</Badge>
               <span className="operator-chip">Local operator</span>
@@ -466,17 +485,23 @@ export default function Home() {
                 <div className="topology-strip" aria-label="Runtime Architecture">
                   <div className="topology-card">
                     <small>1. Local AI Agent Model</small>
-                    <strong>🧠 Ollama qwen2.5:7b</strong>
+                    <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <BotRegular style={{ fontSize: 16, color: "var(--accent)" }} /> Ollama qwen2.5:7b
+                    </strong>
                     <span>http://localhost:11434 · Tool-Calling Ready</span>
                   </div>
                   <div className="topology-card" style={{ borderLeft: "3px solid #176b58" }}>
                     <small>2. Runtime Governance Gateway</small>
-                    <strong>🛡️ ARG Policy Engine v1</strong>
+                    <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <ShieldCheckmarkRegular style={{ fontSize: 16, color: "#176b58" }} /> ARG Policy Engine v1
+                    </strong>
                     <span>{activePolicy?.name ?? "Guardrails Active"} (v{activePolicy?.version ?? 1})</span>
                   </div>
                   <div className="topology-card" style={{ borderLeft: "3px solid #d99b26" }}>
                     <small>3. Target Enterprise ERP</small>
-                    <strong>🏛️ Northstar Freight Core</strong>
+                    <strong style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <BuildingBankRegular style={{ fontSize: 16, color: "#d99b26" }} /> Northstar Freight Core
+                    </strong>
                     <span>Port 8080/8082 · HMAC-SHA256 Token Gated</span>
                   </div>
                 </div>
@@ -509,7 +534,8 @@ export default function Home() {
                         onClick={() => void submitPrompt("Process an emergency ₹50,000 refund for Acme Corp on invoice INV-2088", false)}
                         disabled={busy || !demoAgentAvailable}
                       >
-                        ⚡ High-Impact Refund (₹50,000) ➔ Staged for Human Approval
+                        <FlashRegular style={{ fontSize: 14, verticalAlign: "middle", marginRight: 4 }} />
+                        High-Impact Refund (₹50,000) ➔ Staged for Human Approval
                       </button>
                       <button
                         type="button"
@@ -517,7 +543,8 @@ export default function Home() {
                         onClick={() => void submitPrompt("Update Global Logistics CUST-1042 address and set status to ACTIVE", false)}
                         disabled={busy || !demoAgentAvailable}
                       >
-                        ⚡ Routine Customer Update ➔ Auto-Allowed with Grant
+                        <FlashRegular style={{ fontSize: 14, verticalAlign: "middle", marginRight: 4 }} />
+                        Routine Customer Update ➔ Auto-Allowed with Grant
                       </button>
                       <button
                         type="button"
@@ -525,7 +552,8 @@ export default function Home() {
                         onClick={() => void submitPrompt("Delete customer record for CUST-2088 permanently", false)}
                         disabled={busy || !demoAgentAvailable}
                       >
-                        ⚡ Destructive Deletion ➔ Blocked by Policy
+                        <FlashRegular style={{ fontSize: 14, verticalAlign: "middle", marginRight: 4 }} />
+                        Destructive Deletion ➔ Blocked by Policy
                       </button>
                     </div>
 
@@ -576,8 +604,9 @@ export default function Home() {
                         </div>
                         {latest.decision === "REQUIRE_APPROVAL" && (
                           <div style={{ marginTop: 14, padding: 14, background: "#fff8ee", border: "1px solid #f2c789", borderRadius: 4 }}>
-                            <div style={{ fontSize: 12, color: "#80500f", marginBottom: 10, lineHeight: 1.5 }}>
-                              ⏸️ <strong>Paused by ARG Policy</strong>: High financial impact. External ERP system of record remains completely untouched until signed.
+                            <div style={{ fontSize: 12, color: "#80500f", marginBottom: 10, lineHeight: 1.5, display: "flex", alignItems: "center", gap: 6 }}>
+                              <PauseCircleRegular style={{ fontSize: 16, color: "#80500f" }} />
+                              <span><strong>Paused by ARG Policy</strong>: High financial impact. External ERP system of record remains completely untouched until signed.</span>
                             </div>
                             <Button appearance="primary" onClick={() => setSection("approvals")}>
                               Review & Authorize in Approvals ({approvals.length} pending)
@@ -627,7 +656,8 @@ export default function Home() {
                   detail="The independent operational ledger governed by ARG. Direct mutations without cryptographic HMAC grant tokens are strictly rejected with 403 Forbidden."
                 />
                 <div style={{ display: "flex", gap: 12, margin: "14px 0", alignItems: "center", background: "#f8f9fa", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 4 }}>
-                  <span style={{ fontSize: 12, color: "#1b4332", fontWeight: 600 }}>🔒 Cryptographic Gate Active:</span>
+                  <LockClosedRegular style={{ fontSize: 16, color: "#176b58" }} />
+                  <span style={{ fontSize: 12, color: "#176b58", fontWeight: 600 }}>Cryptographic Gate Active:</span>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>External ERP reachable at ports 8080 and 8082. Replay-protected single-use grants enforced.</span>
                 </div>
                 <div className="erp-grid">
@@ -646,7 +676,7 @@ export default function Home() {
                             <tr key={cust.id}>
                               <td><code>{cust.customer_code}</code></td>
                               <td><strong>{cust.name}</strong></td>
-                              <td><span className={cust.status === "ACTIVE" ? "erp-badge-paid" : cust.status === "DELETED" ? "chat-msg blocked" : "erp-badge-pending"}>{cust.status}</span></td>
+                              <td><span className={cust.status === "ACTIVE" ? "erp-badge-paid" : cust.status === "DELETED" ? "erp-badge-deleted" : "erp-badge-pending"}>{cust.status}</span></td>
                               <td>₹{cust.credit_limit.toLocaleString()}</td>
                               <td><b>₹{cust.current_balance.toLocaleString()}</b></td>
                             </tr>
@@ -777,7 +807,7 @@ function ApprovalCard({
   const matchingRules = approval.policy_rules.filter((rule) => rule.action_type === action.type);
 
   return <article className="approval-item">
-    <div className="approval-title"><div><StatusBadge value={approval.status} /><h2>{action.type}</h2><p>{action.target} · {action.environment} · {action.data_classification}</p></div><div className="risk-number">{approval.risk_score}<small>risk score</small></div></div>
+    <div className="approval-title"><div><StatusBadge value={approval.status} /><h3>{action.type}</h3><p>{action.target} · {action.environment} · {action.data_classification}</p></div><div className="risk-number">{approval.risk_score}<small>risk score</small></div></div>
     <div className="approval-facts">
       <div><span>Action parameters</span><strong>{parameterSummary || "No parameters"}</strong></div>
       <div><span>Risk factors</span><strong>{approval.risk_factors.map((factor) => `${factor.name} +${factor.points} — ${factor.reason}`).join(" · ") || "None"}</strong></div>

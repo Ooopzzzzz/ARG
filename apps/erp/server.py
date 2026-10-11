@@ -168,7 +168,8 @@ def erp_dashboard():
         refund_label = f"REFUNDED (-₹{refund_amount:,})" if is_refunded else "NONE / UNPAID"
         grant_note = text(invoice["notes"] or "Standard ledger entry")
         invoice_rows.append(
-            f'<tr class="ledger-row" data-code="{invoice_code}" data-cust="{customer_code}" '
+            f'<tr class="ledger-row" tabindex="0" role="button" aria-label="Inspect invoice {invoice_code}" '
+            f'data-code="{invoice_code}" data-cust="{customer_code}" '
             f'data-amount="₹{amount:,}" data-refund="{refund_label}" data-notes="{grant_note}" '
             f'data-search="{invoice_code} {customer_code} {refund_status}">'
             f'<td><code class="code-primary">{invoice_code}</code></td>'
@@ -322,6 +323,18 @@ def erp_dashboard():
       .workstation { grid-template-columns: 1fr; }
       .inspector-pane { position: static; }
     }
+    @media (max-width: 768px) {
+      .masthead { padding: 0 16px; }
+      .masthead-inner { height: auto; padding: 14px 0; flex-direction: column; align-items: flex-start; gap: 12px; }
+      .gateway-strip { padding: 10px 16px; }
+      .gateway-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .manifest-bar { padding: 0 16px; margin-top: 16px; }
+      .manifest-sheet { padding: 12px 14px; }
+      .manifest-group { gap: 14px 20px; }
+      .workstation { padding: 0 16px; margin: 16px auto 32px; }
+      .table-toolbar { flex-direction: column; align-items: stretch; }
+      .search-box { max-width: none; }
+    }
   </style>
 </head>
 <body>
@@ -374,7 +387,7 @@ def erp_dashboard():
             <input type="search" id="invoice-filter" class="search-box" placeholder="Filter invoices or customer..." oninput="filterTable('invoice-filter', 'invoice-table')">
             <span class="pane-counter">Click a row to inspect proof</span>
           </div>
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-label="Invoices ledger table scroll container">
             <table id="invoice-table">
               <thead>
                 <tr>
@@ -396,7 +409,7 @@ def erp_dashboard():
           <span class="pane-counter">{customer_count} Accounts</span>
         </div>
         <div class="table-container">
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-label="Customer account directory table scroll container">
             <table>
               <thead>
                 <tr><th>Account Code</th><th>Company Name & Email</th><th>Tier</th><th>Standing</th></tr>
@@ -416,7 +429,7 @@ def erp_dashboard():
           <span class="pane-counter">{grant_count} Proof Tokens</span>
         </div>
         <div class="table-container">
-          <div class="table-scroll">
+          <div class="table-scroll" tabindex="0" aria-label="Cryptographic grants vault table scroll container">
             <table>
               <thead>
                 <tr><th>ARG Request ID</th><th>Verification Timestamp</th><th>Replay Status</th></tr>
@@ -476,21 +489,31 @@ def erp_dashboard():
       });
     }
 
-    // Row selection for inspector
+    // Row selection and inspector sync
     const rows = document.querySelectorAll('#invoice-tbody tr.ledger-row');
+    function selectRow(r) {
+      rows.forEach(x => x.classList.remove('selected'));
+      r.classList.add('selected');
+      document.getElementById('inspect-code').innerText = r.getAttribute('data-code') || '';
+      document.getElementById('inspect-cust').innerText = r.getAttribute('data-cust') || '';
+      document.getElementById('inspect-status').innerHTML = (r.getAttribute('data-amount') || '') + ' · <span class="badge badge-rust">' + (r.getAttribute('data-refund') || '') + '</span>';
+      document.getElementById('inspect-notes').innerText = r.getAttribute('data-notes') || 'Standard transaction';
+    }
+
     rows.forEach(r => {
-      r.addEventListener('click', () => {
-        rows.forEach(x => x.classList.remove('selected'));
-        r.classList.add('selected');
-        document.getElementById('inspect-code').innerText = r.getAttribute('data-code') || '';
-        document.getElementById('inspect-cust').innerText = r.getAttribute('data-cust') || '';
-        document.getElementById('inspect-status').innerHTML = (r.getAttribute('data-amount') || '') + ' · <span class="badge badge-rust">' + (r.getAttribute('data-refund') || '') + '</span>';
-        document.getElementById('inspect-notes').innerText = r.getAttribute('data-notes') || 'Standard transaction';
+      r.addEventListener('click', () => selectRow(r));
+      r.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectRow(r);
+        }
       });
     });
 
-    // Auto-select first row
-    if (rows.length > 0) rows[rows.length - 1].classList.add('selected');
+    // Auto-select and synchronize inspector with the active row
+    if (rows.length > 0) {
+      selectRow(rows[rows.length - 1]);
+    }
 
     // Live background sync polling every 3 seconds
     setInterval(async () => {
