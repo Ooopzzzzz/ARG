@@ -515,18 +515,28 @@ def erp_dashboard():
       selectRow(rows[rows.length - 1]);
     }
 
-    // Live background sync polling every 3 seconds
+    // Live background sync polling every 3 seconds (checks refund status, amount, and grants)
+    let lastGrantCount = {grant_count};
     setInterval(async () => {
       try {
-        const res = await fetch('/api/v1/erp/invoices');
-        if (res.ok) {
-          const data = await res.json();
-          // Check if any invoice changed refund status
+        const [resInv, resGrants] = await Promise.all([
+          fetch('/api/v1/erp/invoices'),
+          fetch('/api/v1/erp/consumed-grants')
+        ]);
+        if (resGrants.ok) {
+          const grants = await resGrants.json();
+          if (grants.length !== lastGrantCount) {
+            window.location.reload();
+            return;
+          }
+        }
+        if (resInv.ok) {
+          const data = await resInv.json();
           data.forEach(inv => {
             const row = document.querySelector(`tr[data-code="${inv.invoice_code}"]`);
-            if (row && inv.refund_status === 'REFUNDED') {
-              const currentRefund = row.getAttribute('data-refund');
-              if (!currentRefund || !currentRefund.includes('REFUNDED')) {
+            if (row) {
+              const currentNotes = row.getAttribute('data-notes') || '';
+              if (inv.notes && inv.notes !== currentNotes) {
                 window.location.reload();
               }
             }
