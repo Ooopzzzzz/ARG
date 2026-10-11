@@ -72,3 +72,110 @@ button { cursor: pointer; }
 @media (max-width: 1024px) { .main-content { padding: 0 22px 24px; }.content-grid { grid-template-columns: 1fr; }.summary-item { padding: 13px; } }
 @media (max-width: 767px) { .shell { display: block; }.sidebar { min-height: auto; padding: 12px 12px 9px; }.brand { padding: 0 3px 12px; }.workspace-label,.tenant-name,.sidebar-foot { display: none; }.sidebar [role="tablist"] { flex-direction: row; overflow-x: auto; gap: 3px; }.sidebar [role="tab"] { width: auto; min-width: max-content; min-height: 38px; }.main-content { padding: 0 15px 20px; }.topbar { height: 48px; }.crumb { display: block; max-width: 48vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }.topbar-right { gap: 8px; }.operator-chip { display: none; }.page-head { align-items: flex-start; flex-direction: column; padding: 22px 0 17px; }.summary-strip { grid-template-columns: repeat(2,minmax(0,1fr)); }.summary-item:nth-child(2) { border-right: 0; }.summary-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }.panel { padding: 14px; }.scenario-row { align-items: flex-start; flex-direction: column; }.scenario-row button { width: 100%; }.approval-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }.approval-actions { flex-direction: column; }.approval-actions button { width: 100%; min-height: 44px; }.page-footer { flex-direction: column; }.audit-row { grid-template-columns: 24px minmax(0,1fr); }.audit-row code { grid-column: 2; }.summary-item strong { font-size: 20px; } }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* Live Runtime Topology & Pipeline */
+.topology-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.topology-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.topology-card small {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.topology-card strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.topology-card span {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+}
+
+/* Prompt Interceptor Bar */
+.live-prompt-runner {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+.prompt-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.preset-btn {
+  background: #f4f6f8;
+  border: 1px solid #d5dde2;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #172b38;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.preset-btn:hover {
+  background: #e8eef2;
+  border-color: #176b58;
+  color: #176b58;
+}
+.prompt-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.prompt-input {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #9aa7af;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+/* Offline Sandbox Drawer */
+.offline-sandbox {
+  margin-top: 24px;
+  background: #f7f9fa;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+.offline-sandbox summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.offline-sandbox[open] summary {
+  margin-bottom: 12px;
+  color: var(--ink);
+}
+.sandbox-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}

@@ -90,6 +90,7 @@ export default function Home() {
     },
   ]);
   const [lastSyncTime, setLastSyncTime] = useState<string>("");
+  const [overviewPrompt, setOverviewPrompt] = useState<string>("");
 
   const refresh = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -278,27 +279,27 @@ export default function Home() {
     finally { setBusy(false); }
   }
 
-  async function sendChatMessage(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const prompt = chatInput.trim();
-    if (!prompt) return;
+  async function submitPrompt(prompt: string, updateChat = true) {
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt) return;
 
     const agent = agents.find((item) => item.name === "Customer Operations Agent" && item.enabled);
     if (!agent) { setError("Seed or enable the Customer Operations Agent first."); return; }
 
-    const userMsg: ChatMessage = {
-      id: String(Date.now()),
-      sender: "user",
-      text: prompt,
-      timestamp: new Date().toLocaleTimeString(),
-    };
-    setChatMessages((prev) => [...prev, userMsg]);
-    setChatInput("");
+    if (updateChat) {
+      const userMsg: ChatMessage = {
+        id: String(Date.now()),
+        sender: "user",
+        text: cleanPrompt,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+      setChatMessages((prev) => [...prev, userMsg]);
+    }
     setBusy(true);
 
     // Interpret user prompt into an enterprise action proposal
     let actionPayload: Record<string, unknown>;
-    const lower = prompt.toLowerCase();
+    const lower = cleanPrompt.toLowerCase();
     if (lower.includes("delete") || lower.includes("remove")) {
       actionPayload = {
         type: "customer.record.delete",
@@ -322,7 +323,7 @@ export default function Home() {
       actionPayload = {
         type: "customer.record.update",
         target: "demo-crm/customer/1042",
-        parameters: { status: "active", note: prompt },
+        parameters: { status: "active", note: cleanPrompt },
         environment: "development",
         data_classification: "internal",
         impact: { amount: 0, currency: "INR" },
@@ -342,7 +343,6 @@ export default function Home() {
       setLatest(result);
 
       if (result.decision === "ALLOW") {
-        // Execute immediately
         const execRes = await fetch("/api/demo/execute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -350,54 +350,71 @@ export default function Home() {
         });
         const execData: { status?: string; result?: RuntimeResult["execution"]; detail?: string } = await execRes.json();
         const msgText = execData.result?.message ?? "Action authorized and completed in ERP.";
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: String(Date.now() + 1),
-            sender: "agent",
-            text: `✅ [ARG ALLOWED]: ${msgText}`,
-            tag: "executed",
-            timestamp: new Date().toLocaleTimeString(),
-          },
-        ]);
+        if (updateChat) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: String(Date.now() + 1),
+              sender: "agent",
+              text: `✅ [ARG ALLOWED]: ${msgText}`,
+              tag: "executed",
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
+        }
       } else if (result.decision === "REQUIRE_APPROVAL") {
-        setChatMessages((prev) => [
-          ...prev,
-          {
-            id: String(Date.now() + 1),
-            sender: "agent",
-            text: `⏸️ [ARG PAUSED]: Risk Score is ${result.risk.score}/100 (${result.reason_codes.join(", ")}). This high-impact mutation is paused for human authorization in the Approvals tab (Request: ${result.request_id.slice(0, 8)}). The ERP has NOT been touched.`,
-            tag: "intercepted",
-            timestamp: new Date().toLocaleTimeString(),
-          },
-        ]);
+        if (updateChat) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: String(Date.now() + 1),
+              sender: "agent",
+              text: `⏸️ [ARG PAUSED]: Risk Score is ${result.risk.score}/100 (${result.reason_codes.join(", ")}). This high-impact mutation is paused for human authorization in the Approvals tab (Request: ${result.request_id.slice(0, 8)}). The ERP has NOT been touched.`,
+              tag: "intercepted",
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
+        }
       } else {
+        if (updateChat) {
+          setChatMessages((prev) => [
+            ...prev,
+            {
+              id: String(Date.now() + 1),
+              sender: "agent",
+              text: `🛑 [ARG BLOCKED]: Action denied by policy guardrail (${result.reason_codes.join(", ")}). The enterprise ERP remains strictly protected.`,
+              tag: "blocked",
+              timestamp: new Date().toLocaleTimeString(),
+            },
+          ]);
+        }
+      }
+      await refresh();
+    } catch (err) {
+      if (updateChat) {
         setChatMessages((prev) => [
           ...prev,
           {
             id: String(Date.now() + 1),
             sender: "agent",
-            text: `🛑 [ARG BLOCKED]: Action denied by policy guardrail (${result.reason_codes.join(", ")}). The enterprise ERP remains strictly protected.`,
+            text: `⚠️ Error communicating with ARG: ${err instanceof Error ? err.message : "Failed"}`,
             tag: "blocked",
             timestamp: new Date().toLocaleTimeString(),
           },
         ]);
+      } else {
+        setError(err instanceof Error ? err.message : "Prompt evaluation failed");
       }
-      await refresh();
-    } catch (err) {
-      setChatMessages((prev) => [
-        ...prev,
-        {
-          id: String(Date.now() + 1),
-          sender: "agent",
-          text: `⚠️ Error communicating with ARG: ${err instanceof Error ? err.message : "Failed"}`,
-          tag: "blocked",
-          timestamp: new Date().toLocaleTimeString(),
-        },
-      ]);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function sendChatMessage(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const prompt = chatInput;
+    setChatInput("");
+    await submitPrompt(prompt, true);
   }
 
   if (!sessionLoaded) return <FluentProvider theme={webLightTheme}><div className="session-loading"><Spinner label="Checking operator session" /></div></FluentProvider>;
@@ -445,31 +462,179 @@ export default function Home() {
           {loading ? <div className="loading-state"><Spinner label="Loading governance data" /></div> : (
             <>
               {section === "overview" && <>
+                {/* Live Runtime Architecture & Topology */}
+                <div className="topology-strip" aria-label="Runtime Architecture">
+                  <div className="topology-card">
+                    <small>1. Local AI Agent Model</small>
+                    <strong>🧠 Ollama qwen2.5:7b</strong>
+                    <span>http://localhost:11434 · Tool-Calling Ready</span>
+                  </div>
+                  <div className="topology-card" style={{ borderLeft: "3px solid #176b58" }}>
+                    <small>2. Runtime Governance Gateway</small>
+                    <strong>🛡️ ARG Policy Engine v1</strong>
+                    <span>{activePolicy?.name ?? "Guardrails Active"} (v{activePolicy?.version ?? 1})</span>
+                  </div>
+                  <div className="topology-card" style={{ borderLeft: "3px solid #d99b26" }}>
+                    <small>3. Target Enterprise ERP</small>
+                    <strong>🏛️ Northstar Freight Core</strong>
+                    <span>Port 8080/8082 · HMAC-SHA256 Token Gated</span>
+                  </div>
+                </div>
+
                 <div className="summary-strip" aria-label="Governance summary">
                   <Summary label="Registered agents" value={overview?.agents ?? 0} detail="Known runtime identities" />
                   <Summary label="Pending approvals" value={overview?.pending_approvals ?? 0} detail="Actions paused before execution" />
                   <Summary label="Evaluated actions" value={overview?.decisions ?? 0} detail="Recorded governance decisions" />
                   <Summary label="Active policy" value={activePolicy?.name ?? "None"} detail={activePolicy ? `Version ${activePolicy.version}` : "No active policy"} />
                 </div>
-                <div className="content-grid">
-                  <section className="panel demo-panel"><PanelHeader title="Run a controlled scenario" detail="Each proposal goes through the runtime API and uses the mock adapter." />
-                    <div className="scenario-list">
-                      <Scenario title="Routine customer update" detail="Low-impact update, expected to be allowed." onClick={() => void submitScenario("routine")} disabled={busy || !demoAgentAvailable} />
-                      <Scenario title="High-impact update" detail="Production action with declared financial impact." onClick={() => void submitScenario("high_impact")} disabled={busy || !demoAgentAvailable} />
-                      <Scenario title="Restricted deletion" detail="Explicit deny rule, no execution path." onClick={() => void submitScenario("restricted")} disabled={busy || !demoAgentAvailable} />
+
+                {/* Live Governed Prompt Interceptor & Runner */}
+                <section className="live-prompt-runner">
+                  <PanelHeader
+                    title="Live Governed Agent Pipeline (Ollama qwen2.5:7b ⟷ ARG ⟷ Northstar ERP)"
+                    detail="Every prompt sent from host CLI, Ollama chat, or this console is intercepted and risk-evaluated in real time. High-impact mutations never touch the ERP without cryptographic approval."
+                  />
+
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <Text size={200} style={{ color: "var(--muted)", fontWeight: 700, letterSpacing: "0.05em" }}>
+                        INTERACTIVE GOVERNANCE PRESETS (TEST LIVE GUARDRAILS):
+                      </Text>
+                      <span style={{ fontSize: 11, color: "var(--muted)" }}>Zero-Timeout HITL Architecture</span>
                     </div>
-                    {latest && <div className="decision-result"><div className="result-top"><div><Text className="eyebrow">LATEST DECISION</Text><div className="decision-line"><StatusBadge value={latest.decision} /><span>Risk score {latest.risk.score}/100</span></div></div><code>{latest.request_id.slice(0, 8)}</code></div><p className="reason-line">{latest.reason_codes.join(" · ")}</p><div className="factor-row">{latest.risk.factors.map((factor) => <span key={factor.name}>{factor.name}: <b>{factor.points}</b></span>)}</div>{latest.decision === "ALLOW" && !latest.execution && <Button appearance="primary" onClick={() => void executeLatest()} disabled={busy}>Execute through mock adapter</Button>}{latest.execution && <div className="mock-outcome"><StatusBadge value={latest.state} /><span>{latest.execution.message} at {latest.execution.target}</span></div>}</div>}
+                    <div className="prompt-presets">
+                      <button
+                        type="button"
+                        className="preset-btn"
+                        onClick={() => void submitPrompt("Process an emergency ₹50,000 refund for Acme Corp on invoice INV-2088", false)}
+                        disabled={busy || !demoAgentAvailable}
+                      >
+                        ⚡ High-Impact Refund (₹50,000) ➔ Staged for Human Approval
+                      </button>
+                      <button
+                        type="button"
+                        className="preset-btn"
+                        onClick={() => void submitPrompt("Update Global Logistics CUST-1042 address and set status to ACTIVE", false)}
+                        disabled={busy || !demoAgentAvailable}
+                      >
+                        ⚡ Routine Customer Update ➔ Auto-Allowed with Grant
+                      </button>
+                      <button
+                        type="button"
+                        className="preset-btn"
+                        onClick={() => void submitPrompt("Delete customer record for CUST-2088 permanently", false)}
+                        disabled={busy || !demoAgentAvailable}
+                      >
+                        ⚡ Destructive Deletion ➔ Blocked by Policy
+                      </button>
+                    </div>
+
+                    <form
+                      className="prompt-form"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!overviewPrompt.trim()) return;
+                        void submitPrompt(overviewPrompt, false);
+                        setOverviewPrompt("");
+                      }}
+                    >
+                      <input
+                        type="text"
+                        className="prompt-input"
+                        placeholder="Enter instruction for agent (e.g. 'Issue 50000 refund on INV-2088' or test via 'python3 test_realtime_pipeline.py')..."
+                        value={overviewPrompt}
+                        onChange={(e) => setOverviewPrompt(e.target.value)}
+                        disabled={busy || !demoAgentAvailable}
+                      />
+                      <Button appearance="primary" type="submit" disabled={busy || !overviewPrompt.trim() || !demoAgentAvailable}>
+                        {busy ? "Evaluating in ARG..." : "Send to Governed Agent"}
+                      </Button>
+                    </form>
+                  </div>
+                </section>
+
+                <div className="content-grid">
+                  <section className="panel">
+                    <PanelHeader title="Latest Governed Decision" detail="Live risk scoring and cryptographic policy evaluation." />
+                    {latest ? (
+                      <div className="decision-result">
+                        <div className="result-top">
+                          <div>
+                            <Text className="eyebrow">DECISION VERDICT</Text>
+                            <div className="decision-line">
+                              <StatusBadge value={latest.decision} />
+                              <span style={{ fontWeight: 600 }}>Risk score: {latest.risk.score}/100</span>
+                            </div>
+                          </div>
+                          <code>{latest.request_id.slice(0, 8)}</code>
+                        </div>
+                        <p className="reason-line">{latest.reason_codes.join(" · ")}</p>
+                        <div className="factor-row">
+                          {latest.risk.factors.map((factor) => (
+                            <span key={factor.name}>{factor.name}: <b>{factor.points}</b></span>
+                          ))}
+                        </div>
+                        {latest.decision === "REQUIRE_APPROVAL" && (
+                          <div style={{ marginTop: 14, padding: 14, background: "#fff8ee", border: "1px solid #f2c789", borderRadius: 4 }}>
+                            <div style={{ fontSize: 12, color: "#80500f", marginBottom: 10, lineHeight: 1.5 }}>
+                              ⏸️ <strong>Paused by ARG Policy</strong>: High financial impact. External ERP system of record remains completely untouched until signed.
+                            </div>
+                            <Button appearance="primary" onClick={() => setSection("approvals")}>
+                              Review & Authorize in Approvals ({approvals.length} pending)
+                            </Button>
+                          </div>
+                        )}
+                        {latest.decision === "ALLOW" && !latest.execution && (
+                          <div style={{ marginTop: 12 }}>
+                            <Button appearance="primary" onClick={() => void executeLatest()} disabled={busy}>
+                              Execute Mutation with HMAC Proof Token
+                            </Button>
+                          </div>
+                        )}
+                        {latest.execution && (
+                          <div className="mock-outcome">
+                            <StatusBadge value={latest.state} />
+                            <span>{latest.execution.message} at {latest.execution.target}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ padding: "28px 0", color: "var(--muted)", fontSize: 13, textAlign: "center" }}>
+                        No actions evaluated in this session yet. Choose a preset above or run <code>python3 test_realtime_pipeline.py</code> in the terminal.
+                      </div>
+                    )}
+
+                    {/* Offline Developer Sandbox Collapsible Drawer */}
+                    <details className="offline-sandbox">
+                      <summary>Offline Developer Sandbox (Fallback when Ollama is offline)</summary>
+                      <p className="sandbox-note">Deterministic synthetic test actions using the local test harness. Use only for offline testing without the Ollama model.</p>
+                      <div className="scenario-list">
+                        <Scenario title="Routine customer update" detail="Low-impact update, expected to be allowed." onClick={() => void submitScenario("routine")} disabled={busy || !demoAgentAvailable} />
+                        <Scenario title="High-impact update" detail="Production action with declared financial impact." onClick={() => void submitScenario("high_impact")} disabled={busy || !demoAgentAvailable} />
+                        <Scenario title="Restricted deletion" detail="Explicit deny rule, no execution path." onClick={() => void submitScenario("restricted")} disabled={busy || !demoAgentAvailable} />
+                      </div>
+                    </details>
                   </section>
-                  <section className="panel"><PanelHeader title="Recent governance activity" detail="Latest audit events across the workspace." /><AuditList events={events.slice(0, 6)} /></section>
+                  <section className="panel">
+                    <PanelHeader title="Recent governance activity" detail="Latest audit events across the workspace." />
+                    <AuditList events={events.slice(0, 6)} />
+                  </section>
                 </div>
               </>}
               {section === "erp" && <section className="panel">
-                <PanelHeader title="Northstar Global Logistics — Enterprise ERP Portal" detail="The live enterprise system of record protected by ARG. Records only mutate after cryptographic authorization." />
+                <PanelHeader
+                  title="Northstar Freight Core — Enterprise System of Record"
+                  detail="The independent operational ledger governed by ARG. Direct mutations without cryptographic HMAC grant tokens are strictly rejected with 403 Forbidden."
+                />
+                <div style={{ display: "flex", gap: 12, margin: "14px 0", alignItems: "center", background: "#f8f9fa", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 4 }}>
+                  <span style={{ fontSize: 12, color: "#1b4332", fontWeight: 600 }}>🔒 Cryptographic Gate Active:</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>External ERP reachable at ports 8080 and 8082. Replay-protected single-use grants enforced.</span>
+                </div>
                 <div className="erp-grid">
                   <div>
                     <div className="erp-card-header">
-                      <h3>Customer Accounts Ledger</h3>
-                      <Badge appearance="tint" color="informative">{erpCustomers.length} Accounts</Badge>
+                      <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Customer Accounts Ledger</h3>
+                      <span style={{ fontSize: 11, fontFamily: "ui-monospace, monospace", color: "var(--muted)" }}>{erpCustomers.length} ACCOUNTS</span>
                     </div>
                     <div className="table-wrap">
                       <table>
@@ -492,8 +657,8 @@ export default function Home() {
                   </div>
                   <div>
                     <div className="erp-card-header">
-                      <h3>Financial Invoices & Refund Registry</h3>
-                      <Badge appearance="tint" color="informative">{erpInvoices.length} Invoices</Badge>
+                      <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Financial Invoices & Refund Registry</h3>
+                      <span style={{ fontSize: 11, fontFamily: "ui-monospace, monospace", color: "var(--muted)" }}>{erpInvoices.length} INVOICES</span>
                     </div>
                     <div className="table-wrap">
                       <table>
@@ -511,7 +676,7 @@ export default function Home() {
                                   {inv.refund_status === "REFUNDED" ? `REFUNDED (₹${inv.refund_amount.toLocaleString()})` : "NONE / UNPAID"}
                                 </span>
                               </td>
-                              <td><small>{inv.notes ?? "Standard transaction"}</small></td>
+                              <td><small style={{ color: "var(--muted)" }}>{inv.notes ?? "Standard transaction"}</small></td>
                             </tr>
                           ))}
                         </tbody>

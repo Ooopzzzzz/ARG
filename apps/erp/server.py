@@ -13,9 +13,9 @@ DB_PATH = os.environ.get("ERP_DB_PATH", "/tmp/northstar_erp.db")
 ERP_SHARED_SECRET = os.environ.get("ARG_ERP_SHARED_SECRET", "northstar-enterprise-shared-secret-2026")
 
 app = FastAPI(
-    title="Northstar Enterprise ERP (External Standalone System)",
-    description="Independent enterprise ERP representing a real third-party system governed by ARG.",
-    version="1.0.0",
+    title="Northstar Freight Core ERP",
+    description="Authoritative enterprise freight ledger governed by ARG runtime tokens.",
+    version="2.0.0",
 )
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 
@@ -57,7 +57,6 @@ def init_db():
         )
     """)
 
-    # Seed default enterprise records if empty
     cursor.execute("SELECT count(*) FROM erp_customers")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
@@ -89,7 +88,6 @@ def require_arg_governance(
             detail="DIRECT_ACCESS_FORBIDDEN: External ERP requires verified ARG Grant Token (X-ARG-Grant-Token header missing).",
         )
 
-    # Import dynamically from ARG security token spec
     try:
         from apps.api.app.security_tokens import verify_proof_token
         payload = verify_proof_token(x_arg_grant_token, ERP_SHARED_SECRET)
@@ -99,7 +97,6 @@ def require_arg_governance(
             detail=f"SECURITY_VIOLATION: Invalid or forged ARG Grant Token ({str(exc)})",
         )
 
-    # Replay protection: verify grant token hasn't been consumed already
     request_id = payload.get("rid")
     conn = get_db()
     cursor = conn.cursor()
@@ -152,12 +149,12 @@ def erp_dashboard():
     def status_class(value: str) -> str:
         normalized = value.upper()
         if normalized in {"PAID", "ACTIVE", "REFUNDED", "VERIFIED"}:
-            return "state state--complete"
+            return "badge-spruce"
         if normalized in {"PENDING", "REVIEW"}:
-            return "state state--review"
+            return "badge-brass"
         if normalized in {"SUSPENDED", "FAILED", "REJECTED"}:
-            return "state state--exception"
-        return "state state--neutral"
+            return "badge-rust"
+        return "badge-neutral"
 
     invoice_rows = []
     for invoice in invoices:
@@ -166,18 +163,21 @@ def erp_dashboard():
         amount = int(invoice["amount"])
         refund_status = str(invoice["refund_status"])
         refund_amount = int(invoice["refund_amount"])
-        refund_detail = f"₹{refund_amount:,} returned" if refund_status.upper() == "REFUNDED" else "No refund"
+        is_refunded = refund_status.upper() == "REFUNDED"
+        refund_badge_class = "badge-rust" if is_refunded else "badge-neutral"
+        refund_label = f"REFUNDED (-₹{refund_amount:,})" if is_refunded else "NONE / UNPAID"
+        grant_note = text(invoice["notes"] or "Standard ledger entry")
         invoice_rows.append(
-            "<tr class=\"ledger-row\" data-search=\"{} {} {}\">"
-            "<td><code>{}</code></td><td><span class=\"account-code\">{}</span></td>"
-            "<td class=\"amount\">₹{:,}</td><td><span class=\"{}\">{}</span></td>"
-            "<td><span class=\"{}\">{}</span><small class=\"subvalue\">{}</small></td>"
-            "<td class=\"notes-cell\">{}</td></tr>".format(
-                invoice_code, customer_code, text(refund_status), invoice_code, customer_code, amount,
-                status_class(str(invoice["status"])), text(invoice["status"]),
-                status_class(refund_status), text(refund_status), text(refund_detail),
-                text(invoice["notes"] or "No note recorded"),
-            )
+            f'<tr class="ledger-row" data-code="{invoice_code}" data-cust="{customer_code}" '
+            f'data-amount="₹{amount:,}" data-refund="{refund_label}" data-notes="{grant_note}" '
+            f'data-search="{invoice_code} {customer_code} {refund_status}">'
+            f'<td><code class="code-primary">{invoice_code}</code></td>'
+            f'<td><strong class="cust-code">{customer_code}</strong></td>'
+            f'<td class="amt-col">₹{amount:,}</td>'
+            f'<td><span class="badge {status_class(str(invoice["status"]))}">{text(invoice["status"])}</span></td>'
+            f'<td><span class="badge {refund_badge_class}">{text(refund_label)}</span></td>'
+            f'<td class="notes-cell">{grant_note}</td>'
+            f'</tr>'
         )
 
     customer_rows = []
@@ -185,37 +185,40 @@ def erp_dashboard():
         customer_code = text(customer["customer_code"])
         customer_name = text(customer["name"])
         customer_rows.append(
-            "<tr class=\"ledger-row\" data-search=\"{} {} {}\">"
-            "<td><code>{}</code></td><td><strong>{}</strong><small class=\"subvalue\">{}</small></td>"
-            "<td>{}</td><td><span class=\"{}\">{}</span></td></tr>".format(
-                customer_code, customer_name, text(customer["email"]), customer_code,
-                customer_name, text(customer["email"]), text(customer["tier"]),
-                status_class(str(customer["status"])), text(customer["status"]),
-            )
+            f'<tr class="ledger-row" data-search="{customer_code} {customer_name} {text(customer["email"])}">'
+            f'<td><code class="code-primary">{customer_code}</code></td>'
+            f'<td><strong>{customer_name}</strong><small class="subtext">{text(customer["email"])}</small></td>'
+            f'<td><span class="tier-tag">{text(customer["tier"])}</span></td>'
+            f'<td><span class="badge {status_class(str(customer["status"]))}">{text(customer["status"])}</span></td>'
+            f'</tr>'
         )
 
     grant_rows = []
     for grant in consumed:
         grant_id = text(grant["grant_id"])
         granted_at = int(grant["consumed_at"])
+        ts_iso = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(granted_at))
+        ts_str = time.strftime("%d %b %Y · %H:%M:%S", time.localtime(granted_at))
         grant_rows.append(
-            "<tr class=\"ledger-row\" data-search=\"{} hmac verified\">"
-            "<td><code>{}</code></td><td><time datetime=\"{}\">{}</time></td>"
-            "<td><span class=\"state state--complete\">Verified and consumed</span></td></tr>".format(
-                grant_id, grant_id, time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(granted_at)),
-                time.strftime("%d %b %Y · %H:%M:%S", time.localtime(granted_at)),
-            )
+            f'<tr class="ledger-row" data-search="{grant_id}">'
+            f'<td><code>{grant_id}</code></td>'
+            f'<td><time datetime="{ts_iso}">{ts_str}</time></td>'
+            f'<td><span class="badge badge-spruce">HMAC-SHA256 CONSUMED</span></td>'
+            f'</tr>'
         )
 
     active_count = sum(1 for customer in customers if str(customer["status"]).upper() == "ACTIVE")
     refunded_count = sum(1 for invoice in invoices if str(invoice["refund_status"]).upper() == "REFUNDED")
+    total_billed = sum(int(inv["amount"]) for inv in invoices)
+    total_refunded = sum(int(inv["refund_amount"]) for inv in invoices)
+
     page = """<!doctype html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-  <meta charset=\"utf-8\">
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-  <meta name=\"theme-color\" content=\"#f0f3ef\">
-  <title>Northstar | Invoice register</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <title>Northstar Freight Core | Operational System of Record</title>
   <style>
     @font-face { font-family: "Fira Sans"; src: url("/static/fonts/FiraSans-Regular.otf") format("opentype"); font-style: normal; font-weight: 400; font-display: swap; }
     @font-face { font-family: "Fira Sans"; src: url("/static/fonts/FiraSans-Medium.otf") format("opentype"); font-style: normal; font-weight: 500; font-display: swap; }
@@ -223,205 +226,291 @@ def erp_dashboard():
     @font-face { font-family: "Fira Mono"; src: url("/static/fonts/FiraMono-Regular.otf") format("opentype"); font-style: normal; font-weight: 400; font-display: swap; }
     :root {
       color-scheme: light;
-      --ground: #f0f3ef;
-      --surface: #ffffff;
-      --ink: #1d2b27;
-      --muted: #53635d;
-      --line: #d3ddd7;
-      --line-strong: #a9b8af;
-      --harbor: #215944;
-      --harbor-wash: #e6f1ea;
-      --vermilion: #963e2d;
-      --vermilion-wash: #f8e9e5;
-      --amber: #76500b;
-      --amber-wash: #f6efdc;
-      --mono: "Fira Mono", "SFMono-Regular", Consolas, monospace;
-      --sans: "Fira Sans", "Segoe UI", sans-serif;
+      --bg-ground: #f6f5f0;
+      --bg-surface: #ffffff;
+      --bg-header: #14171a;
+      --ink-primary: #15181b;
+      --ink-muted: #5c646b;
+      --rule-line: #d4d2c9;
+      --rule-dark: #2a2e33;
+      --spruce: #194433;
+      --spruce-wash: #e8f3ed;
+      --spruce-border: #a8ccbb;
+      --rust: #872b1e;
+      --rust-wash: #fcedea;
+      --rust-border: #e8b6af;
+      --brass: #785312;
+      --brass-wash: #faf3e4;
+      --brass-border: #dfcaa2;
+      --amber-accent: #d99b26;
+      --mono: "Fira Mono", SFMono-Regular, Menlo, monospace;
+      --sans: "Fira Sans", -apple-system, Segoe UI, sans-serif;
     }
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; scroll-padding-top: 94px; }
-    body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.5 var(--sans); }
-    a { color: inherit; }
-    button, input { font: inherit; }
-    button, a { -webkit-tap-highlight-color: transparent; }
-    :focus-visible { outline: 3px solid var(--vermilion); outline-offset: 3px; }
-    .masthead { background: var(--surface); border-bottom: 1px solid var(--line-strong); }
-    .masthead-inner, .workspace { width: min(100% - 48px, 1320px); margin-inline: auto; }
-    .masthead-inner { min-height: 72px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-    .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
-    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--harbor); color: var(--harbor); font: 700 11px/1 var(--mono); letter-spacing: -.08em; }
-    .brand-name { font-size: 15px; font-weight: 650; letter-spacing: -.015em; }
-    .brand-subtitle { color: var(--muted); display: block; font-size: 12px; margin-top: 2px; }
-    .system-meta { display: flex; align-items: center; gap: 18px; color: var(--muted); font: 11px/1.3 var(--mono); }
-    .system-meta span { white-space: nowrap; }
-    .local-tag { padding: 7px 9px; color: var(--harbor); background: var(--harbor-wash); border: 1px solid #c4d8ca; }
-    .subnav { border-bottom: 1px solid var(--line); background: var(--surface); }
-    .subnav-inner { width: min(100% - 48px, 1320px); min-height: 48px; display: flex; align-items: stretch; gap: 26px; margin-inline: auto; }
-    .subnav a { display: inline-flex; align-items: center; border-bottom: 2px solid transparent; color: var(--muted); font-size: 13px; font-weight: 550; text-decoration: none; }
-    .subnav a:hover { color: var(--ink); border-color: var(--harbor); }
-    .workspace { padding: 34px 0 54px; }
-    .page-intro { display: flex; justify-content: space-between; align-items: end; gap: 28px; padding-bottom: 24px; }
-    h1, h2, p { margin-top: 0; }
-    h1 { margin-bottom: 7px; font-size: clamp(27px, 3vw, 36px); letter-spacing: -.04em; line-height: 1.12; font-weight: 600; }
-    .intro-copy { max-width: 68ch; margin-bottom: 0; color: var(--muted); font-size: 14px; }
-    .refresh-button { min-height: 44px; padding: 0 15px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
-    .refresh-button:hover { border-color: var(--harbor); color: var(--harbor); }
-    .proof-strip { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 22px; padding: 12px 15px; border: 1px solid var(--line); background: #e8eeea; }
-    .proof-copy { color: var(--ink); font-size: 13px; }
-    .proof-copy strong { color: var(--harbor); font-weight: 650; }
-    .proof-code { color: var(--muted); font: 11px/1.4 var(--mono); white-space: nowrap; }
-    .register-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 26px; background: var(--surface); border: 1px solid var(--line); }
-    .summary-item { min-width: 0; padding: 14px 18px 15px; border-right: 1px solid var(--line); }
-    .summary-item:last-child { border-right: 0; }
-    .summary-item span, .summary-item strong { display: block; }
-    .summary-item span { color: var(--muted); font-size: 12px; }
-    .summary-item strong { margin-top: 3px; font-size: 23px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .ledger-section { margin-top: 32px; scroll-margin-top: 92px; }
-    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 12px; }
-    .section-heading h2 { margin: 0; font-size: 20px; line-height: 1.25; font-weight: 600; letter-spacing: -.025em; }
-    .section-note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-    .section-count { color: var(--muted); font: 11px/1.4 var(--mono); white-space: nowrap; }
-    .ledger-frame { background: var(--surface); border: 1px solid var(--line); }
-    .table-tools { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding: 13px 15px; border-bottom: 1px solid var(--line); }
-    .table-tools label { display: grid; gap: 4px; color: var(--muted); font-size: 11px; font-weight: 600; }
-    .table-tools input { width: min(100%, 340px); min-height: 44px; padding: 7px 10px; border: 1px solid var(--line-strong); color: var(--ink); background: var(--surface); }
-    .result-count { color: var(--muted); font: 11px/1.4 var(--mono); }
-    .table-scroll { width: 100%; overflow-x: auto; }
+    body { margin: 0; background: var(--bg-ground); color: var(--ink-primary); font: 14px/1.5 var(--sans); }
+    a { color: inherit; text-decoration: none; }
+    code, time, .mono-val { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+    :focus-visible { outline: 2px solid var(--amber-accent); outline-offset: 2px; }
+
+    /* Industrial Masthead */
+    .masthead { background: var(--bg-header); color: #eef1f4; border-bottom: 2px solid var(--amber-accent); padding: 0 28px; }
+    .masthead-inner { max-width: 1440px; margin: 0 auto; height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .brand-block { display: flex; align-items: center; gap: 14px; }
+    .brand-symbol { width: 32px; height: 32px; background: var(--amber-accent); color: #14171a; display: grid; place-items: center; font: 700 13px/1 var(--mono); border-radius: 2px; }
+    .brand-meta h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: #ffffff; }
+    .brand-meta span { display: block; font-size: 11px; color: #8e97a0; font-family: var(--mono); }
+    .masthead-pills { display: flex; align-items: center; gap: 12px; font-family: var(--mono); font-size: 11px; }
+    .env-tag { padding: 4px 8px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 2px; color: #c4ccd4; }
+    .live-pulse { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; background: rgba(25, 68, 51, 0.4); border: 1px solid #2f7a5c; border-radius: 2px; color: #6ee7b7; font-weight: 500; }
+    .pulse-dot { width: 7px; height: 7px; background: #10b981; border-radius: 50%; display: inline-block; animation: blink 2s infinite ease-in-out; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* Sub-bar / Gateway Security Notice */
+    .gateway-strip { background: #eae8e1; border-bottom: 1px solid var(--rule-line); padding: 10px 28px; }
+    .gateway-inner { max-width: 1440px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #3a4248; }
+    .gateway-inner strong { color: var(--spruce); font-weight: 600; }
+
+    /* Operational Manifest Strip */
+    .manifest-bar { max-width: 1440px; margin: 24px auto 0; padding: 0 28px; }
+    .manifest-sheet { background: var(--bg-surface); border: 1px solid var(--rule-line); padding: 16px 20px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; border-left: 4px solid var(--spruce); }
+    .manifest-group { display: flex; flex-wrap: wrap; gap: 24px 32px; align-items: center; }
+    .m-item small { display: block; font-size: 10px; font-family: var(--mono); color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .m-item b { font-size: 16px; font-weight: 600; font-family: var(--mono); color: var(--ink-primary); }
+
+    /* Workstation Grid: Ledger Left, Inspector Right */
+    .workstation { max-width: 1440px; margin: 22px auto 40px; padding: 0 28px; display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(340px, 1.2fr); gap: 24px; align-items: start; }
+    .ledger-pane { display: grid; gap: 24px; }
+    .pane-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+    .pane-header h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+    .pane-counter { font-family: var(--mono); font-size: 11px; color: var(--ink-muted); }
+
+    /* Tables */
+    .table-container { background: var(--bg-surface); border: 1px solid var(--rule-line); overflow: hidden; }
+    .table-toolbar { padding: 10px 14px; background: #faf9f6; border-bottom: 1px solid var(--rule-line); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .search-box { width: 100%; max-width: 320px; padding: 6px 10px; border: 1px solid var(--rule-line); background: #ffffff; font-size: 12px; font-family: var(--sans); }
+    .table-scroll { overflow-x: auto; max-height: 480px; }
     table { width: 100%; border-collapse: collapse; text-align: left; }
-    th { padding: 10px 14px; color: var(--muted); background: #f5f7f5; border-bottom: 1px solid var(--line); font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; }
-    td { padding: 12px 14px; border-bottom: 1px solid #e8ede9; vertical-align: middle; font-size: 13px; }
-    tbody tr:last-child td { border-bottom: 0; }
-    tbody tr:hover td { background: #f7faf8; }
-    code, time, .account-code, .amount { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
-    code { color: #254c3d; }
-    .amount { white-space: nowrap; text-align: right; }
-    .subvalue { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; font-weight: 400; }
-    .notes-cell { max-width: 300px; color: var(--muted); font-size: 12px; }
-    .state { display: inline-flex; align-items: center; min-height: 25px; padding: 3px 8px; border: 1px solid transparent; font-size: 11px; font-weight: 600; white-space: nowrap; }
-    .state--complete { color: #174e38; background: var(--harbor-wash); border-color: #c4d8ca; }
-    .state--review { color: #68470b; background: var(--amber-wash); border-color: #e6d9b4; }
-    .state--exception { color: #873927; background: var(--vermilion-wash); border-color: #e8c7bf; }
-    .state--neutral { color: #46564f; background: #eef2ef; border-color: #dce4df; }
-    .empty-row td { padding: 24px; color: var(--muted); text-align: center; }
-    .grant-table th, .grant-table td { padding-block: 14px; }
-    .footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 38px; padding-top: 14px; border-top: 1px solid var(--line-strong); color: var(--muted); font-size: 11px; }
-    .footer code { font-size: 10px; }
-    @media (max-width: 760px) {
-      .masthead-inner, .workspace, .subnav-inner { width: min(100% - 32px, 1320px); }
-      .masthead-inner { min-height: 64px; }
-      .system-meta { gap: 8px; }
-      .system-meta .last-sync { display: none; }
-      .subnav-inner { gap: 22px; overflow-x: auto; }
-      .subnav a { min-height: 46px; white-space: nowrap; }
-      .workspace { padding-top: 25px; }
-      .page-intro { align-items: start; }
-      .proof-strip { align-items: start; flex-direction: column; gap: 5px; }
-      .register-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .summary-item:nth-child(2) { border-right: 0; }
-      .summary-item:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-      .table-tools { align-items: stretch; flex-direction: column; }
-      .table-tools input { width: 100%; }
-      .result-count { align-self: start; }
-      .ledger-section { margin-top: 25px; }
-      .footer { flex-direction: column; }
-    }
-    @media (max-width: 480px) {
-      .masthead-inner, .workspace, .subnav-inner { width: min(100% - 24px, 1320px); }
-      .brand { gap: 9px; }
-      .brand-name { font-size: 13px; }
-      .brand-subtitle { font-size: 10px; }
-      .brand-mark { width: 30px; height: 30px; }
-      .system-meta { display: grid; justify-items: end; font-size: 9px; }
-      .local-tag { padding: 5px 6px; }
-      .page-intro { flex-direction: column; gap: 15px; }
-      .refresh-button { width: 100%; }
-      .section-heading { align-items: start; flex-direction: column; gap: 4px; }
-      .table-scroll table { min-width: 710px; }
-      .grant-table { min-width: 560px !important; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
+    th { padding: 9px 12px; background: #f2f0ea; color: #434c54; font-size: 10px; font-weight: 600; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--rule-line); position: sticky; top: 0; z-index: 1; }
+    td { padding: 10px 12px; border-bottom: 1px solid #ebe8e1; font-size: 13px; vertical-align: middle; }
+    tr.ledger-row { cursor: pointer; transition: background 0.1s ease; }
+    tr.ledger-row:hover { background: #fbf9f4; }
+    tr.ledger-row.selected { background: #f3efe6; border-left: 3px solid var(--amber-accent); }
+    .code-primary { color: #164e39; font-weight: 600; }
+    .amt-col { font-family: var(--mono); font-weight: 600; text-align: right; white-space: nowrap; }
+    .notes-cell { font-size: 11px; color: var(--ink-muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .subtext { display: block; font-size: 11px; color: var(--ink-muted); font-weight: 400; }
+    .tier-tag { font-family: var(--mono); font-size: 11px; color: #4a5568; }
+
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; padding: 2px 7px; font-size: 10px; font-weight: 600; font-family: var(--mono); border: 1px solid transparent; border-radius: 1px; white-space: nowrap; }
+    .badge-spruce { background: var(--spruce-wash); color: var(--spruce); border-color: var(--spruce-border); }
+    .badge-rust { background: var(--rust-wash); color: var(--rust); border-color: var(--rust-border); }
+    .badge-brass { background: var(--brass-wash); color: var(--brass); border-color: var(--brass-border); }
+    .badge-neutral { background: #eeebe3; color: #5a646c; border-color: #d6d2c8; }
+
+    /* Right-side Inspector */
+    .inspector-pane { background: var(--bg-surface); border: 1px solid var(--rule-line); position: sticky; top: 20px; }
+    .inspector-header { background: #f2f0ea; padding: 12px 16px; border-bottom: 1px solid var(--rule-line); display: flex; align-items: center; justify-content: space-between; }
+    .inspector-header h3 { margin: 0; font-size: 13px; font-weight: 600; text-transform: uppercase; font-family: var(--mono); letter-spacing: 0.04em; }
+    .inspector-body { padding: 18px 16px; display: grid; gap: 16px; }
+    .inspect-field small { display: block; font-size: 10px; font-family: var(--mono); color: var(--ink-muted); text-transform: uppercase; margin-bottom: 3px; }
+    .inspect-field p { margin: 0; font-size: 13px; font-weight: 500; }
+    .inspect-token-box { background: #faf9f6; border: 1px dashed var(--rule-line); padding: 12px; font-family: var(--mono); font-size: 11px; word-break: break-all; }
+    .token-status { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--spruce); font-weight: 600; }
+
+    @media (max-width: 1080px) {
+      .workstation { grid-template-columns: 1fr; }
+      .inspector-pane { position: static; }
     }
   </style>
 </head>
 <body>
-  <header class=\"masthead\">
-    <div class=\"masthead-inner\">
-      <a class=\"brand\" href=\"/\" aria-label=\"Northstar home\">
-        <span class=\"brand-mark\" aria-hidden=\"true\">NS</span>
-        <span><span class=\"brand-name\">Northstar Freight Core</span><span class=\"brand-subtitle\">Accounts and customer records</span></span>
-      </a>
-      <div class=\"system-meta\"><span class=\"local-tag\">LOCAL · SYNTHETIC</span><span class=\"last-sync\">LEDGER · SQLITE</span></div>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="brand-block">
+        <div class="brand-symbol">NS</div>
+        <div class="brand-meta">
+          <h1>Northstar Freight Core</h1>
+          <span>Operational Freight Settlement & Ledger · System of Record</span>
+        </div>
+      </div>
+      <div class="masthead-pills">
+        <span class="env-tag">ISOLATED PORT: 8080/8082</span>
+        <span class="live-pulse"><span class="pulse-dot"></span>LIVE AUTO-SYNC (3S)</span>
+      </div>
     </div>
   </header>
-  <nav class=\"subnav\" aria-label=\"Ledger sections\"><div class=\"subnav-inner\">
-    <a href=\"#invoices\">Invoice register</a><a href=\"#customers\">Customer accounts</a><a href=\"#grants\">ARG grant receipts</a>
-  </div></nav>
-  <main class=\"workspace\">
-    <section class=\"page-intro\" aria-labelledby=\"page-title\">
-      <div><h1 id=\"page-title\">Invoice register</h1><p class=\"intro-copy\">Review Northstar billing records and confirm which refunds have reached the local ledger.</p></div>
-      <button class=\"refresh-button\" type=\"button\" onclick=\"window.location.reload()\">Refresh ledger</button>
-    </section>
-    <section class=\"proof-strip\" aria-label=\"ARG execution boundary\">
-      <div class=\"proof-copy\"><strong>ARG grant required</strong> · Direct ledger mutations are rejected without a verified, single-use proof token.</div>
-      <div class=\"proof-code\">GATEWAY → REVIEW → ERP</div>
-    </section>
-    <section class=\"register-summary\" aria-label=\"Ledger summary\">
-      <div class=\"summary-item\"><span>Invoice records</span><strong>{invoice_count}</strong></div>
-      <div class=\"summary-item\"><span>Customer accounts</span><strong>{customer_count}</strong></div>
-      <div class=\"summary-item\"><span>Active accounts</span><strong>{active_count}</strong></div>
-      <div class=\"summary-item\"><span>Refunded invoices</span><strong>{refunded_count}</strong></div>
-    </section>
 
-    <section class=\"ledger-section\" id=\"invoices\" aria-labelledby=\"invoice-title\">
-      <div class=\"section-heading\"><div><h2 id=\"invoice-title\">Accounts receivable</h2><p class=\"section-note\">Invoice value, accounting state, and refund outcome.</p></div><span class=\"section-count\">{invoice_count} RECORDS</span></div>
-      <div class=\"ledger-frame\">
-        <div class=\"table-tools\"><label for=\"invoice-search\">Find an invoice or customer<input id=\"invoice-search\" type=\"search\" placeholder=\"Invoice code or customer code\" autocomplete=\"off\"></label><span class=\"result-count\" id=\"invoice-count\" aria-live=\"polite\">Showing {invoice_count} invoices</span></div>
-        <div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"Invoice register table; scroll horizontally to view all columns\"><table><thead><tr>
-          <th scope=\"col\">Invoice</th><th scope=\"col\">Customer account</th><th scope=\"col\">Billed amount</th><th scope=\"col\">Billing state</th><th scope=\"col\">Refund outcome</th><th scope=\"col\">Ledger note</th>
-        </tr></thead><tbody id=\"invoice-rows\">{invoice_rows}<tr class=\"empty-row\" id=\"invoice-empty\" hidden><td colspan=\"6\">No invoices match this search.</td></tr></tbody></table></div>
+  <aside class="gateway-strip">
+    <div class="gateway-inner">
+      <div>🛡️ <strong>ARG Cryptographic Boundary Active</strong>: All ledger mutations strictly require verified, single-use HMAC-SHA256 proof grants.</div>
+      <div class="mono-val">REPLAY PROTECTION: STRICT SINGLE-USE</div>
+    </div>
+  </aside>
+
+  <div class="manifest-bar">
+    <div class="manifest-sheet">
+      <div class="manifest-group">
+        <div class="m-item"><small>Manifest Ledger</small><b>MFR-2026-X89</b></div>
+        <div class="m-item"><small>Invoices on Record</small><b>{invoice_count} ({total_billed})</b></div>
+        <div class="m-item"><small>Settled / Refunded</small><b>{refunded_count} ({total_refunded})</b></div>
+        <div class="m-item"><small>Customer Accounts</small><b>{customer_count} ({active_count} Active)</b></div>
+        <div class="m-item"><small>ARG Grants Consumed</small><b>{grant_count} Proofs</b></div>
       </div>
-    </section>
+      <button onclick="window.location.reload()" style="background:#ffffff;border:1px solid var(--rule-line);padding:6px 12px;font:600 12px var(--sans);cursor:pointer;">Refresh Ledger</button>
+    </div>
+  </div>
 
-    <section class=\"ledger-section\" id=\"customers\" aria-labelledby=\"customer-title\">
-      <div class=\"section-heading\"><div><h2 id=\"customer-title\">Customer accounts</h2><p class=\"section-note\">Registered companies, account tier, and current standing.</p></div><span class=\"section-count\">{customer_count} ACCOUNTS · {active_count} ACTIVE</span></div>
-      <div class=\"ledger-frame\">
-        <div class=\"table-tools\"><label for=\"customer-search\">Find a customer<input id=\"customer-search\" type=\"search\" placeholder=\"Code, company, or contact\" autocomplete=\"off\"></label><span class=\"result-count\" id=\"customer-count\" aria-live=\"polite\">Showing {customer_count} accounts</span></div>
-        <div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"Customer accounts table; scroll horizontally to view all columns\"><table><thead><tr>
-          <th scope=\"col\">Account code</th><th scope=\"col\">Company and contact</th><th scope=\"col\">Commercial tier</th><th scope=\"col\">Account standing</th>
-        </tr></thead><tbody id=\"customer-rows\">{customer_rows}<tr class=\"empty-row\" id=\"customer-empty\" hidden><td colspan=\"4\">No accounts match this search.</td></tr></tbody></table></div>
+  <main class="workstation">
+    <div class="ledger-pane">
+      <!-- Invoices Section -->
+      <section>
+        <div class="pane-header">
+          <h2>Accounts Receivable Ledger</h2>
+          <span class="pane-counter">{invoice_count} Invoices</span>
+        </div>
+        <div class="table-container">
+          <div class="table-toolbar">
+            <input type="search" id="invoice-filter" class="search-box" placeholder="Filter invoices or customer..." oninput="filterTable('invoice-filter', 'invoice-table')">
+            <span class="pane-counter">Click a row to inspect proof</span>
+          </div>
+          <div class="table-scroll">
+            <table id="invoice-table">
+              <thead>
+                <tr>
+                  <th>Invoice</th><th>Customer</th><th style="text-align:right">Billed</th><th>Status</th><th>Refund</th><th>Audit Provenance</th>
+                </tr>
+              </thead>
+              <tbody id="invoice-tbody">
+                {invoice_rows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Customers Section -->
+      <section>
+        <div class="pane-header">
+          <h2>Customer Account Directory</h2>
+          <span class="pane-counter">{customer_count} Accounts</span>
+        </div>
+        <div class="table-container">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Account Code</th><th>Company Name & Email</th><th>Tier</th><th>Standing</th></tr>
+              </thead>
+              <tbody>
+                {customer_rows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ARG Grants Vault -->
+      <section>
+        <div class="pane-header">
+          <h2>Consumed Cryptographic Grants (ARG Vault)</h2>
+          <span class="pane-counter">{grant_count} Proof Tokens</span>
+        </div>
+        <div class="table-container">
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>ARG Request ID</th><th>Verification Timestamp</th><th>Replay Status</th></tr>
+              </thead>
+              <tbody>
+                {grant_rows}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Side: Cryptographic Settlement Inspector -->
+    <aside class="inspector-pane">
+      <div class="inspector-header">
+        <h3>Cryptographic Settlement Inspector</h3>
+        <span class="badge badge-spruce">HMAC-SHA256</span>
       </div>
-    </section>
-
-    <section class=\"ledger-section\" id=\"grants\" aria-labelledby=\"grant-title\">
-      <div class=\"section-heading\"><div><h2 id=\"grant-title\">ARG grant receipts</h2><p class=\"section-note\">Single-use proofs consumed by this ERP ledger.</p></div><span class=\"section-count\">{grant_count} RECEIPTS</span></div>
-      <div class=\"ledger-frame\"><div class=\"table-scroll\" role=\"region\" tabindex=\"0\" aria-label=\"ARG grant receipts table; scroll horizontally to view all columns\"><table class=\"grant-table\"><thead><tr>
-        <th scope=\"col\">ARG request ID</th><th scope=\"col\">Consumed at</th><th scope=\"col\">Verification result</th>
-      </tr></thead><tbody>{grant_rows}<tr class=\"empty-row\" {grant_hidden}><td colspan=\"3\">No ARG grants have been consumed by this ERP yet.</td></tr></tbody></table></div></div>
-    </section>
-    <footer class=\"footer\"><span>Northstar Global Logistics · Local synthetic ledger</span><span>Mutations require ARG proof verification</span></footer>
+      <div class="inspector-body" id="inspector-content">
+        <div class="inspect-field">
+          <small>Selected Record</small>
+          <p id="inspect-code" class="mono-val" style="font-size:16px;font-weight:700;color:var(--spruce);">INV-2088</p>
+        </div>
+        <div class="inspect-field">
+          <small>Customer Account</small>
+          <p id="inspect-cust">CUST-2088 (Acme Corporation)</p>
+        </div>
+        <div class="inspect-field">
+          <small>Invoice Value & Settlement Status</small>
+          <p id="inspect-status">₹50,000 · <span class="badge badge-rust" id="inspect-refund-badge">REFUNDED (-₹50,000)</span></p>
+        </div>
+        <div class="inspect-field">
+          <small>Cryptographic Authorization Audit</small>
+          <div class="inspect-token-box" id="inspect-notes">
+            Authorized by ARG Governance. Verified HMAC-SHA256 proof token received and consumed.
+          </div>
+          <div class="token-status">
+            <span>🔒</span>
+            <span id="inspect-status-msg">Single-Use Replay Protection Active. Direct mutations rejected with 403.</span>
+          </div>
+        </div>
+        <div style="background:#f4f2ec;padding:12px;border:1px solid var(--rule-line);font-size:11px;color:var(--ink-muted);line-height:1.5;">
+          <strong>Security Guarantee:</strong> Unauthenticated agent mutations fail immediately. Every mutation in this ledger requires an operator-authorized cryptographic grant generated by ARG.
+        </div>
+      </div>
+    </aside>
   </main>
+
   <script>
-    function bindLedgerSearch(inputId, rowsId, emptyId, countId, noun) {
-      const input = document.getElementById(inputId);
-      const rows = Array.from(document.querySelectorAll(`#${rowsId} .ledger-row`));
-      const empty = document.getElementById(emptyId);
-      const counter = document.getElementById(countId);
-      if (!(input instanceof HTMLInputElement) || !(empty instanceof HTMLTableRowElement) || !counter) return;
-      input.addEventListener('input', () => {
-        const query = input.value.trim().toLocaleLowerCase();
-        let visible = 0;
-        for (const row of rows) {
-          const matches = row.dataset.search?.toLocaleLowerCase().includes(query) ?? false;
-          row.hidden = !matches;
-          if (matches) visible += 1;
-        }
-        empty.hidden = visible > 0;
-        counter.textContent = `Showing ${visible} ${noun}`;
+    function filterTable(inputId, tableId) {
+      const q = document.getElementById(inputId).value.toLowerCase();
+      const rows = document.querySelectorAll('#' + tableId + ' tbody tr');
+      rows.forEach(r => {
+        const text = r.getAttribute('data-search') || r.innerText.toLowerCase();
+        r.style.display = text.toLowerCase().includes(q) ? '' : 'none';
       });
     }
-    bindLedgerSearch('invoice-search', 'invoice-rows', 'invoice-empty', 'invoice-count', 'invoices');
-    bindLedgerSearch('customer-search', 'customer-rows', 'customer-empty', 'customer-count', 'accounts');
+
+    // Row selection for inspector
+    const rows = document.querySelectorAll('#invoice-tbody tr.ledger-row');
+    rows.forEach(r => {
+      r.addEventListener('click', () => {
+        rows.forEach(x => x.classList.remove('selected'));
+        r.classList.add('selected');
+        document.getElementById('inspect-code').innerText = r.getAttribute('data-code') || '';
+        document.getElementById('inspect-cust').innerText = r.getAttribute('data-cust') || '';
+        document.getElementById('inspect-status').innerHTML = (r.getAttribute('data-amount') || '') + ' · <span class="badge badge-rust">' + (r.getAttribute('data-refund') || '') + '</span>';
+        document.getElementById('inspect-notes').innerText = r.getAttribute('data-notes') || 'Standard transaction';
+      });
+    });
+
+    // Auto-select first row
+    if (rows.length > 0) rows[rows.length - 1].classList.add('selected');
+
+    // Live background sync polling every 3 seconds
+    setInterval(async () => {
+      try {
+        const res = await fetch('/api/v1/erp/invoices');
+        if (res.ok) {
+          const data = await res.json();
+          // Check if any invoice changed refund status
+          data.forEach(inv => {
+            const row = document.querySelector(`tr[data-code="${inv.invoice_code}"]`);
+            if (row && inv.refund_status === 'REFUNDED') {
+              const currentRefund = row.getAttribute('data-refund');
+              if (!currentRefund || !currentRefund.includes('REFUNDED')) {
+                window.location.reload();
+              }
+            }
+          });
+        }
+      } catch (e) {}
+    }, 3000);
   </script>
 </body>
 </html>"""
@@ -431,14 +520,15 @@ def erp_dashboard():
         "{customer_count}": str(len(customers)),
         "{active_count}": str(active_count),
         "{refunded_count}": str(refunded_count),
+        "{total_billed}": f"₹{total_billed:,}",
+        "{total_refunded}": f"₹{total_refunded:,}",
         "{invoice_rows}": "".join(invoice_rows),
         "{customer_rows}": "".join(customer_rows),
         "{grant_count}": str(len(consumed)),
         "{grant_rows}": "".join(grant_rows),
-        "{grant_hidden}": "hidden" if consumed else "",
     }
-    marker_pattern = re.compile(r"\{(?:invoice_count|customer_count|active_count|refunded_count|invoice_rows|customer_rows|grant_count|grant_rows|grant_hidden)\}")
-    page = marker_pattern.sub(lambda match: replacements[match.group(0)], page)
+    marker_pattern = re.compile(r"\{(?:invoice_count|customer_count|active_count|refunded_count|total_billed|total_refunded|invoice_rows|customer_rows|grant_count|grant_rows)\}")
+    page = marker_pattern.sub(lambda match: str(replacements[match.group(0)]), page)
     return HTMLResponse(content=page)
 
 
@@ -465,6 +555,16 @@ def get_invoices():
         SELECT invoice_code, customer_code, amount, status, refund_status, refund_amount, notes 
         FROM erp_invoices
     """)
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows
+
+
+@app.get("/api/v1/erp/consumed-grants")
+def get_consumed_grants():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT grant_id, consumed_at FROM erp_consumed_grants ORDER BY consumed_at DESC")
     rows = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return rows

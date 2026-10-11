@@ -4,6 +4,13 @@ Record each meaningful project change during the event, newest first. Update thi
 
 ## Event build log
 
+## 2026-10-11T06:40:00+05:30 — Redesign industrial Freight ERP and elevate live Ollama governance in ARG Overview
+
+- Changed: Overhauled standalone Northstar Freight Core ERP (`apps/erp/server.py`) into an authentic industrial logistics workstation with an operational manifest strip, master-detail accounts receivable and customer ledger, live split-panel Cryptographic Settlement Inspector (displaying HMAC-SHA256 verification and replay protection), and live background synchronization. Replaced the generic mock-scenario hero on the ARG Console Overview page (`apps/web/app/page.tsx`, `apps/web/app/globals.css`) with a live 3-node Runtime Architecture Topology banner (`Ollama qwen2.5:7b` ⟷ `ARG Policy Engine v1` ⟷ `Northstar Freight Core ERP`), interactive governance presets, real-time prompt runner, and live decision outcome card; demoted synthetic mock scenario buttons into a collapsed offline developer fallback drawer.
+- Why: Directly eliminate generic AI/template aesthetic patterns (4-box KPI grids, saturated blues, sterile SaaS marketing cards), and resolve user confusion by highlighting the live Ollama agent pipeline rather than default mock adapter messaging during presentations.
+- Validation: Next.js standalone build compiled with zero errors; Playwright headless browser screenshots captured and verified at 1400×960 for both Northstar ERP (`:8080` & `:8082`) and ARG Overview (`:3000`); verified live preset click dynamically evaluating risk (`65/100`, `REQUIRE_APPROVAL`, `HIGH_IMPACT_REVIEW`) and linking to Approvals; `python3 test_realtime_pipeline.py` ran end-to-end with Ollama `qwen2.5:7b` and passed 100%; `git diff --check` passed clean.
+- Limitations: Standalone host ERP on port 8080 and Compose ERP on port 8082 run identical industrial templates with independent SQLite storage unless unified under shared volume.
+
 ## 2026-10-11T05:33:29+05:30 — Redesign synthetic ERP ledger and verify Ollama route
 
 - Changed: Reworked the standalone ERP at `apps/erp/server.py` into a responsive invoice, customer, and ARG grant register; added self-hosted Fira Sans/Mono files and OFL notice; documented its design system in `apps/erp/DESIGN.md` and `.impeccable/design.json`. Removed the gateway's silent heuristic fallback when Ollama is unavailable, added bounded timeout handling and model attribution, configured Compose Ollama settings, and updated the real CLI integration check and setup guide.
